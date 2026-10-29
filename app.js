@@ -5,8 +5,8 @@
 // 1. Tabela de NOTAS — a escala tocada, da mais grave para a mais aguda.
 //    Ajuste aqui para mudar a afinação sem mexer nas teclas físicas.
 const NOTES = [
-  'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4',
-  'C5', 'D5', 'E5', 'F5', 'G5'
+  'C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2',
+  'C3', 'D3', 'E3', 'F3', 'G3'
 ];
 
 // 2. Tabela de TECLAS físicas — o código do teclado (event.code) e o rótulo
@@ -39,8 +39,207 @@ const KEY_MAP = KEYS.map((key, i) => ({
 // Busca rápida por código de tecla física -> índice no KEY_MAP.
 const CODE_TO_INDEX = new Map(KEY_MAP.map((entry, i) => [entry.code, i]));
 
+// ---------------------------------------------------------------------------
+// Preset 46 (Synthex "Laser Harp") — parâmetros do timbre.
+//
+// Modelagem: a harpa laser do Synthex usa DOIS osciladores.
+//   OSC1 (master): fica fixo na nota tocada (a fundamental da harpa).
+//   OSC2 (slave):  afinado bem acima (2 oitavas + 7 semitons) e com um
+//                  "pitch sweep" no ataque, o que rasga os harmônicos e
+//                  produz o característico "poinnn poinnn".
+// Como Tone.js não tem Hard Sync nativo, aproximamos o efeito com o sweep
+// de pitch do OSC2 + PWM (pulse width) modulado por um LFO triangular lento.
+// ---------------------------------------------------------------------------
+const PRESET = {
+  // Intervalo do OSC2 acima da nota tocada, em semitons (2 oitavas + 7 = 31).
+  osc2Semitones: 31,
+
+  // "Pitch sweep" do OSC2: de quantos semitons ele parte ACIMA do alvo e
+  // quanto tempo leva para assentar. É o coração do "poinnn".
+  osc2SweepSemitones: 7,
+  osc2SweepTime: 0.12,     // segundos (o glide descendente do OSC2)
+
+  // Mistura dos dois osciladores (ganho relativo).
+  osc1Level: 0.55,
+  osc2Level: 0.32,
+
+  // Largura de pulso base de cada oscilador (0 = onda quadrada pura).
+  osc1Width: 0.1,
+  osc2Width: -0.2,
+
+  // LFO triangular modulando a largura de pulso do OSC2 (tremor analógico).
+  pwmLfoRate: 1.5,         // Hz — lento
+  pwmLfoDepth: 0.25,       // profundidade da variação de width
+
+  // Envelope de amplitude (compartilhado pelos dois osciladores da voz).
+  envelope: { attack: 0.01, decay: 0.4, sustain: 0.55, release: 0.5 },
+
+  // Portamento (glide) global entre notas, em segundos.
+  portamento: 0.115,
+
+  // Cadeia de efeitos.
+  filter:  { frequency: 1650, Q: 2 },
+  chorus:  { frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.15 },
+  reverb:  { decay: 3.2, wet: 0.34 }
+};
+
+// ---------------------------------------------------------------------------
+// Voz dual-oscilador. Cada voz é alocada a uma nota enquanto ela soa.
+// ---------------------------------------------------------------------------
+class LaserVoice {
+  constructor(destination) {
+    // Envelope de amplitude compartilhado -> destino (filtro).
+    this.amp = new Tone.AmplitudeEnvelope(PRESET.envelope).connect(destination);
+
+    // OSC1: a fundamental (fica na nota tocada).
+    this.osc1 = new Tone.PulseOscillator({
+      frequency: 440,
+      width: PRESET.osc1Width
+    });
+    this.gain1 = new Tone.Gain(PRESET.osc1Level);
+    this.osc1.connect(this.gain1);
+    this.gain1.connect(this.amp);
+
+    // OSC2: afinado bem acima, com pitch sweep no ataque (o "poinnn").
+    this.osc2 = new Tone.PulseOscillator({
+      frequency: 440,
+      width: PRESET.osc2Width
+    });
+    this.gain2 = new Tone.Gain(PRESET.osc2Level);
+    this.osc2.connect(this.gain2);
+    this.gain2.connect(this.amp);
+
+    // LFO triangular modulando a largura de pulso do OSC2 (tremor constante).
+    this.pwmLfo = new Tone.LFO({
+      type: 'triangle',
+      frequency: PRESET.pwmLfoRate,
+      min: PRESET.osc2Width - PRESET.pwmLfoDepth,
+      max: PRESET.osc2Width + PRESET.pwmLfoDepth
+    });
+    this.pwmLfo.connect(this.osc2.width);
+
+    this.osc1.start();
+    this.osc2.start();
+    this.pwmLfo.start();
+
+    // Parâmetros ajustáveis em tempo real (valem a partir da próxima nota).
+    this.portamento = PRESET.portamento;
+    this.osc2Semitones = PRESET.osc2Semitones;
+    this.sweepSemitones = PRESET.osc2SweepSemitones;
+    this.sweepTime = PRESET.osc2SweepTime;
+
+    this.busy = false;   // true enquanto a voz estiver tocando uma nota
+    this.note = null;
+  }
+
+  // Dispara a nota. OSC1 vai direto; OSC2 pula acima e desce (sweep).
+  attack(note, time = Tone.now()) {
+    this.busy = true;
+    this.note = note;
+
+    const f1 = Tone.Frequency(note).toFrequency();
+    const f2Target = Tone.Frequency(note)
+      .transpose(this.osc2Semitones)
+      .toFrequency();
+    const f2Start = Tone.Frequency(note)
+      .transpose(this.osc2Semitones + this.sweepSemitones)
+      .toFrequency();
+
+    // OSC1: glide suave até a fundamental.
+    this.osc1.frequency.setValueAtTime(this.osc1.frequency.value, time);
+    this.osc1.frequency.exponentialRampToValueAtTime(
+      f1, time + this.portamento
+    );
+
+    // OSC2: começa acima do alvo e "escorrega" para baixo => poinnn.
+    this.osc2.frequency.setValueAtTime(f2Start, time);
+    this.osc2.frequency.exponentialRampToValueAtTime(
+      f2Target, time + this.sweepTime
+    );
+
+    this.amp.triggerAttack(time);
+  }
+
+  release(time = Tone.now()) {
+    this.amp.triggerRelease(time);
+    // Libera a voz um pouco depois do fim do release.
+    this.busy = false;
+  }
+
+  setPortamento(seconds) {
+    this.portamento = seconds;
+  }
+
+  setSweepSemitones(semitones) {
+    this.sweepSemitones = semitones;
+  }
+
+  setSweepTime(seconds) {
+    this.sweepTime = seconds;
+  }
+
+  // Ajusta o ganho do OSC2 na mistura (0 a 1). Suave para evitar estalos.
+  setOsc2Level(level) {
+    this.gain2.gain.rampTo(level, 0.05);
+  }
+
+  dispose() {
+    this.osc1.dispose();
+    this.osc2.dispose();
+    this.gain1.dispose();
+    this.gain2.dispose();
+    this.pwmLfo.dispose();
+    this.amp.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gerenciador poligônico simples: uma voz por nota tocada.
+// ---------------------------------------------------------------------------
+class LaserHarp {
+  constructor(destination, polyphony = 12) {
+    this.voices = [];
+    for (let i = 0; i < polyphony; i++) {
+      this.voices.push(new LaserVoice(destination));
+    }
+    this.active = new Map(); // note -> voice
+  }
+
+  triggerAttack(note) {
+    if (this.active.has(note)) return;
+    const voice = this.voices.find((v) => !v.busy);
+    if (!voice) return; // sem vozes livres (polifonia esgotada)
+    voice.attack(note);
+    this.active.set(note, voice);
+  }
+
+  triggerRelease(note) {
+    const voice = this.active.get(note);
+    if (!voice) return;
+    voice.release();
+    this.active.delete(note);
+  }
+
+  setPortamento(seconds) {
+    this.voices.forEach((v) => v.setPortamento(seconds));
+  }
+
+  setSweepSemitones(semitones) {
+    this.voices.forEach((v) => v.setSweepSemitones(semitones));
+  }
+
+  setSweepTime(seconds) {
+    this.voices.forEach((v) => v.setSweepTime(seconds));
+  }
+
+  setOsc2Level(level) {
+    this.voices.forEach((v) => v.setOsc2Level(level));
+  }
+}
+
 let isStarted = false;
-let polySynth, filter, chorus, reverb;
+let isStarting = false;
+let harp, filter, chorus, reverb;
 const activeKeys = new Set();
 
 // UI: Renderizar teclas
@@ -56,63 +255,56 @@ KEY_MAP.forEach((data, index) => {
   keysContainer.appendChild(el);
 });
 
-// Inicialização do Áudio
-document.getElementById('start-btn').addEventListener('click', async () => {
-  if (isStarted) return;
+// Inicialização do Áudio.
+// O navegador só permite iniciar o AudioContext a partir de um gesto do
+// usuário, então chamamos isto na primeira tecla pressionada. Essa primeira
+// tecla serve de "destravamento" e normalmente ainda não soa; da segunda
+// em diante o som sai normal.
+async function initAudio() {
+  if (isStarted || isStarting) return;
+  isStarting = true;
 
   await Tone.start();
   Tone.context.latencyHint = 'interactive';
 
   // --- EFEITOS E FILTRO ---
-  reverb = new Tone.Reverb({ decay: 3.2, wet: 0.35 }).toDestination();
-  
-  // Chorus modo 1 do Synthex (frequência baixa, profundidade alta)
-  chorus = new Tone.Chorus({ frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.55 }).connect(reverb).start();
+  reverb = new Tone.Reverb({
+    decay: PRESET.reverb.decay,
+    wet: PRESET.reverb.wet
+  }).toDestination();
 
+  // Chorus modo 1 do Synthex (frequência baixa, profundidade alta).
+  chorus = new Tone.Chorus({
+    frequency: PRESET.chorus.frequency,
+    delayTime: PRESET.chorus.delayTime,
+    depth: PRESET.chorus.depth,
+    wet: PRESET.chorus.wet
+  }).connect(reverb).start();
+
+  // Filtro Low-Pass 24 dB/oct.
   filter = new Tone.Filter({
-    frequency: 2400,
+    frequency: PRESET.filter.frequency,
     type: 'lowpass',
     rolloff: -24,
-    Q: 1.2
+    Q: PRESET.filter.Q
   }).connect(chorus);
 
-  // --- SINTETIZADOR DUAL-OSCILLATOR (MODELAGEM PRESET 46 SYNTHEX) ---
-  polySynth = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 12,
-    options: {
-      oscillator: {
-        type: 'pwm',          // Pulse Width Modulation no oscilador principal
-        modulationFrequency: 0.3 // LFO lento modulando a largura de pulso (LFO -> PWM)
-      },
-      envelope: {
-        attack: 0.005, // Ataque instantâneo sem estalo
-        decay: 0.4,
-        sustain: 0.6,
-        release: 0.4
-      },
-      portamento: 0.05 // Glide rápido
-    }
-  }).connect(filter);
+  // Instrumento dual-oscilador (modelagem Preset 46 Synthex).
+  harp = new LaserHarp(filter, 12);
 
-  // Aplicação do Pitch Bend/Glide Agressivo focado em simular o Hard Sync
-  polySynth.set({
-    pitchDecay: 0.045, // 45ms de variação harmônica
-    octaves: 2.7,      // Equivale ao salto de oitavas (8' para 2' + 7 semitons do OSC2)
-  });
-
-  document.getElementById('start-btn').style.display = 'none';
   document.getElementById('controls').style.display = 'grid';
   isStarted = true;
+  isStarting = false;
 
   bindControls();
-});
+}
 
 function bindControls() {
   // Glide Speed
   document.getElementById('ctrl-glide').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     document.getElementById('val-glide').innerText = val;
-    polySynth.set({ portamento: val / 1000 });
+    harp.setPortamento(val / 1000);
   });
 
   // Cutoff
@@ -142,17 +334,47 @@ function bindControls() {
     document.getElementById('val-chorus').innerText = `${Math.round(val * 100)}%`;
     chorus.wet.rampTo(val, 0.05);
   });
+
+  // Sweep OSC2 — intensidade do "poinnn" (vale da próxima nota em diante)
+  document.getElementById('ctrl-sweep').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-sweep').innerText = val;
+    harp.setSweepSemitones(val);
+  });
+
+  // Sweep OSC2 — tempo do "poinnn" (ms -> segundos)
+  document.getElementById('ctrl-sweeptime').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    document.getElementById('val-sweeptime').innerText = val;
+    harp.setSweepTime(val / 1000);
+  });
+
+  // Mix OSC2 — presença do segundo oscilador
+  document.getElementById('ctrl-osc2').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-osc2').innerText = `${Math.round(val * 100)}%`;
+    harp.setOsc2Level(val);
+  });
 }
 
 // Teclado
 window.addEventListener('keydown', (e) => {
-  if (!isStarted || e.repeat) return;
+  if (e.repeat) return;
 
   const index = CODE_TO_INDEX.get(e.code);
-  if (index === undefined || activeKeys.has(index)) return;
+  if (index === undefined) return;
+
+  // Primeira tecla destrava o áudio (gesto exigido pelo navegador).
+  // Essa tecla normalmente ainda não soa; da próxima em diante, sim.
+  if (!isStarted) {
+    initAudio();
+    return;
+  }
+
+  if (activeKeys.has(index)) return;
 
   activeKeys.add(index);
-  polySynth.triggerAttack(KEY_MAP[index].note);
+  harp.triggerAttack(KEY_MAP[index].note);
 
   const el = document.getElementById(`key-${index}`);
   if (el) el.classList.add('active');
@@ -165,7 +387,7 @@ window.addEventListener('keyup', (e) => {
   if (index === undefined || !activeKeys.has(index)) return;
 
   activeKeys.delete(index);
-  polySynth.triggerRelease(KEY_MAP[index].note);
+  harp.triggerRelease(KEY_MAP[index].note);
 
   const el = document.getElementById(`key-${index}`);
   if (el) el.classList.remove('active');
