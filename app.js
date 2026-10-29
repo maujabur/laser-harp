@@ -268,12 +268,29 @@ class LaserHarp {
 
 let isStarted = false;
 let isStarting = false;
-let harp, filter, chorus, reverb, inputGain;
+let harp, filter, chorus, reverb, inputGain, masterGain;
+const VOLUME_KEY = 'laser-harp-master-volume-v1';
+function loadVolume() {
+  try {
+    const saved = Number(localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(saved) && saved >= 0 && saved <= 200 ? saved : 100;
+  } catch { return 100; }
+}
+let masterVolume = loadVolume();
+function setMasterVolume(percent) {
+  masterVolume = Math.max(0, Math.min(200, Math.round(percent / 5) * 5));
+  const slider = document.getElementById('ctrl-volume');
+  const value = document.getElementById('val-volume');
+  if (slider) slider.value = String(masterVolume);
+  if (value) value.textContent = `${masterVolume}%`;
+  if (masterGain) masterGain.gain.rampTo(masterVolume / 100, 0.05);
+  try { localStorage.setItem(VOLUME_KEY, String(masterVolume)); } catch { /* armazenamento indisponível */ }
+}
 const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 voice-pool';
+const APP_VERSION = '2026-10-29 desktop-volume';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
@@ -282,6 +299,8 @@ function setAudioStatus(message, error = false) {
 audioButton.addEventListener('click', () => { setAudioStatus('Botão acionado — iniciando áudio…'); ensureAudio().catch(() => {}); });
 setAudioStatus(`JavaScript carregado (${APP_VERSION}) — toque em Ativar áudio`);
 
+
+setMasterVolume(masterVolume);
 
 // UI: Renderizar teclas
 const keysContainer = document.getElementById('keyboard');
@@ -329,11 +348,14 @@ async function initAudio() {
   await Tone.start();
   Tone.context.latencyHint = 'interactive';
 
+  // Volume de saída independente da atenuação protetora de -12 dB.
+  masterGain = new Tone.Gain(masterVolume / 100).toDestination();
+
   // --- EFEITOS E FILTRO ---
   reverb = new Tone.Reverb({
     decay: PRESET.reverb.decay,
     wet: PRESET.reverb.wet
-  }).toDestination();
+  }).connect(masterGain);
 
   // Chorus modo 1 do Synthex (frequência baixa, profundidade alta).
   chorus = new Tone.Chorus({
@@ -369,6 +391,9 @@ async function initAudio() {
 }
 
 function bindControls() {
+  document.getElementById('ctrl-volume').addEventListener('input', (e) => {
+    setMasterVolume(Number(e.target.value));
+  });
   // Glide Speed
   document.getElementById('ctrl-glide').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
@@ -452,6 +477,13 @@ function ensureAudio() {
 }
 
 window.addEventListener('keydown', async (e) => {
+  if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') &&
+      !e.altKey && !e.ctrlKey && !e.metaKey &&
+      !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+    e.preventDefault();
+    setMasterVolume(masterVolume + (e.code === 'ArrowUp' ? 5 : -5));
+    return;
+  }
   if (e.repeat) return;
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
