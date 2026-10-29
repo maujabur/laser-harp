@@ -2,15 +2,56 @@
 // Configuração (fácil de ajustar)
 // ---------------------------------------------------------------------------
 
-// 1. Tabela de NOTAS — a escala tocada, da mais grave para a mais aguda.
-//    Ajuste aqui para mudar a afinação sem mexer nas teclas físicas.
-const NOTES = [
-  'G1', 'C2', 'Eb2', 'F2', 'G2', 'Bb2',
-  'C3', 'Eb3', 'F3', 'G3', 'Bb3', 'C4'
+// 1. ESCALAS disponíveis — descritas por INTERVALOS em semitons dentro de
+//    uma oitava (0 = a própria nota base). As 12 teclas são preenchidas
+//    subindo: quando a escala acaba, continua na oitava seguinte.
+//
+//    O espírito aqui é "difícil tocar errado": as escalas padrão são
+//    pentatônicas (sem semitons tensos), para que qualquer combinação de
+//    notas soe bem mesmo para quem nunca tocou. As de 7 notas vêm como
+//    tempero para quem quiser explorar.
+const SCALES = [
+  // Pentatônica menor em C2 = a afinação original da harpa (C Eb F G Bb ...),
+  // apenas sem o G1 de pickup grave que a versão fixa tinha embaixo.
+  { id: 'penta-menor',  label: 'Pentatônica Menor',  intervals: [0, 3, 5, 7, 10] },
+  { id: 'penta-maior',  label: 'Pentatônica Maior',  intervals: [0, 2, 4, 7, 9] },
+  { id: 'maior',        label: 'Maior (Jônio)',      intervals: [0, 2, 4, 5, 7, 9, 11] },
+  { id: 'dorico',       label: 'Dórico',             intervals: [0, 2, 3, 5, 7, 9, 10] }
 ];
 
-// 2. Tabela de TECLAS físicas — o código do teclado (event.code) e o rótulo
-//    mostrado na tela, na mesma ordem das notas acima.
+// 2. NOTAS BASE seguras — lista curta (em vez de slider cromático livre),
+//    para que no festival nunca pare numa afinação esquisita. Cada uma é a
+//    nota da PRIMEIRA tecla; as demais seguem a escala subindo.
+const ROOT_NOTES = ['G1', 'A1', 'C2', 'D2', 'E2', 'G2', 'A2', 'C3', 'D3'];
+
+const DEFAULT_SCALE_ID = 'penta-menor'; // reproduz a afinação original
+const DEFAULT_ROOT = 'C2';              // 1ª nota da afinação original (C Eb F G Bb)
+
+// O Tone.js exibe notas pretas com sustenido (D#); a estética da harpa usa
+// bemol (Eb). Convertemos só o RÓTULO — a frequência é idêntica e o Tone.js
+// aceita os dois nomes como entrada.
+const SHARP_TO_FLAT = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
+function toFlat(note) {
+  return note.replace(/^([A-G]#)/, (_, pc) => SHARP_TO_FLAT[pc]);
+}
+
+// Gera as 12 notas a partir da nota base e dos intervalos da escala,
+// subindo oitava a oitava. Reaproveita Tone.Frequency().transpose(), já
+// usado no sweep do OSC2.
+const KEY_COUNT = 12;
+function buildNotes(rootNote, scaleIntervals) {
+  const perOctave = scaleIntervals.length;
+  const notes = [];
+  for (let i = 0; i < KEY_COUNT; i++) {
+    const octave = Math.floor(i / perOctave);
+    const semitones = scaleIntervals[i % perOctave] + 12 * octave;
+    notes.push(toFlat(Tone.Frequency(rootNote).transpose(semitones).toNote()));
+  }
+  return notes;
+}
+
+// 3. Tabela de TECLAS físicas — o código do teclado (event.code) e o rótulo
+//    mostrado na tela, na mesma ordem das notas geradas acima.
 const KEYS = [
   { code: 'KeyZ',   label: 'Z' },
   { code: 'KeyX',   label: 'X' },
@@ -28,16 +69,43 @@ const KEYS = [
 
 // ---------------------------------------------------------------------------
 // Mapa final — índices genéricos (0, 1, 2, ...) combinando teclas + notas.
-// KEY_MAP[i] = { code, label, note }
+// KEY_MAP[i] = { code, label, note }. As teclas físicas (code/label) são
+// fixas; só a `note` muda quando o usuário troca de escala ou nota base.
 // ---------------------------------------------------------------------------
+let currentScaleId = DEFAULT_SCALE_ID;
+let currentRoot = DEFAULT_ROOT;
+
+function scaleById(id) {
+  return SCALES.find(s => s.id === id) || SCALES[0];
+}
+
 const KEY_MAP = KEYS.map((key, i) => ({
   code: key.code,
   label: key.label,
-  note: NOTES[i]
+  note: null // preenchido por applyScale()
 }));
 
 // Busca rápida por código de tecla física -> índice no KEY_MAP.
 const CODE_TO_INDEX = new Map(KEY_MAP.map((entry, i) => [entry.code, i]));
+
+// Recalcula as 12 notas e atualiza o KEY_MAP + os rótulos na tela, sem
+// recriar as teclas (os listeners continuam válidos).
+function applyScale(rootNote = currentRoot, scaleId = currentScaleId) {
+  currentRoot = rootNote;
+  currentScaleId = scaleId;
+  const notes = buildNotes(rootNote, scaleById(scaleId).intervals);
+  KEY_MAP.forEach((entry, i) => {
+    entry.note = notes[i];
+    const el = document.getElementById(`key-${i}`);
+    if (el) {
+      const noteLabel = el.querySelector('.note-label');
+      if (noteLabel) noteLabel.textContent = notes[i];
+    }
+  });
+}
+
+// Preenche as notas iniciais antes de qualquer render (sem DOM ainda).
+applyScale();
 
 // ---------------------------------------------------------------------------
 // Preset 46 (Synthex "Laser Harp") — parâmetros do timbre.
@@ -292,7 +360,7 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 defaults-adsr';
+const APP_VERSION = '2026-10-29 scales';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
@@ -336,6 +404,17 @@ KEY_MAP.forEach((data, index) => {
   el.addEventListener('pointercancel', releasePointer);
   el.addEventListener('lostpointercapture', releasePointer);
   keysContainer.appendChild(el);
+});
+
+// Popula os seletores de escala/nota base e conecta sua troca. Estes controles
+// não dependem do áudio estar ativo, então ligamos a troca já aqui (retune só
+// toca no harp quando ele existe).
+populateScaleControls();
+document.getElementById('ctrl-scale').addEventListener('change', (e) => {
+  retune(currentRoot, e.target.value);
+});
+document.getElementById('ctrl-root').addEventListener('change', (e) => {
+  retune(e.target.value, currentScaleId);
 });
 
 // Inicialização do Áudio.
@@ -480,6 +559,33 @@ function bindControls() {
     document.getElementById('val-release').innerText = val;
     harp.setEnvelope('release', val / 1000);
   });
+
+}
+
+// Popula os <select> de escala e nota base e marca os valores atuais.
+function populateScaleControls() {
+  const scaleSel = document.getElementById('ctrl-scale');
+  const rootSel = document.getElementById('ctrl-root');
+  if (scaleSel && !scaleSel.options.length) {
+    SCALES.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.label;
+      scaleSel.appendChild(opt);
+    });
+  }
+  if (rootSel && !rootSel.options.length) {
+    // Inclui a nota base padrão original mesmo que não esteja na lista segura.
+    const roots = ROOT_NOTES.includes(DEFAULT_ROOT) ? ROOT_NOTES : [DEFAULT_ROOT, ...ROOT_NOTES];
+    roots.forEach((n) => {
+      const opt = document.createElement('option');
+      opt.value = n;
+      opt.textContent = n;
+      rootSel.appendChild(opt);
+    });
+  }
+  if (scaleSel) scaleSel.value = currentScaleId;
+  if (rootSel) rootSel.value = currentRoot;
 }
 
 // Compartilha as mesmas notas entre teclado físico e superfícies de toque.
@@ -491,6 +597,24 @@ function updateNote(index) {
   if (held) harp.triggerAttack(note);
   else harp.triggerRelease(note);
   if (el) el.classList.toggle('active', held);
+}
+
+// Troca de escala/nota base com segurança: solta todas as notas que estiverem
+// soando (senão o keyup usaria a nota NOVA e não acharia a antiga no pool),
+// reafina as 12 teclas e limpa o destaque visual.
+function retune(rootNote = currentRoot, scaleId = currentScaleId) {
+  if (harp) {
+    const held = new Set([...activeKeys, ...activePointers.values()]);
+    held.forEach((index) => {
+      const note = KEY_MAP[index].note;
+      if (note) harp.triggerRelease(note);
+      const el = document.getElementById(`key-${index}`);
+      if (el) el.classList.remove('active');
+    });
+    activeKeys.clear();
+    activePointers.clear();
+  }
+  applyScale(rootNote, scaleId);
 }
 
 function ensureAudio() {
