@@ -244,12 +244,14 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
+const APP_VERSION = '2026-10-29 11:45';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
   audioStatus.style.color = error ? '#ff9292' : '#00ffcc';
 }
-audioButton.addEventListener('click', () => { ensureAudio().catch(() => {}); });
+audioButton.addEventListener('click', () => { setAudioStatus('Botão acionado — iniciando áudio…'); ensureAudio().catch(() => {}); });
+setAudioStatus(`JavaScript carregado (${APP_VERSION}) — toque em Ativar áudio`);
 
 
 // UI: Renderizar teclas
