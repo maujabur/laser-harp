@@ -63,20 +63,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   await Tone.start();
   Tone.context.latencyHint = 'interactive';
 
-  // 1. Cadeia de Efeitos
-  reverb = new Tone.Reverb({ decay: 2.8, wet: 0.35 }).toDestination();
-  chorus = new Tone.Chorus({ frequency: 3.5, delayTime: 3.5, depth: 0.7, wet: 0.5 }).connect(reverb).start();
-
-  // 2. Filtro Low-Pass
-  filter = new Tone.Filter({
-    frequency: 2200,
-    type: 'lowpass',
-    rolloff: -24,
-    Q: 2.0
-  }).connect(chorus);
-
-  // 3. Sintetizador com Portamento (Glide) ativado
- // --- EFEITOS E FILTRO ---
+  // --- EFEITOS E FILTRO ---
   reverb = new Tone.Reverb({ decay: 3.2, wet: 0.35 }).toDestination();
   
   // Chorus modo 1 do Synthex (frequência baixa, profundidade alta)
@@ -112,6 +99,13 @@ document.getElementById('start-btn').addEventListener('click', async () => {
     pitchDecay: 0.045, // 45ms de variação harmônica
     octaves: 2.7,      // Equivale ao salto de oitavas (8' para 2' + 7 semitons do OSC2)
   });
+
+  document.getElementById('start-btn').style.display = 'none';
+  document.getElementById('controls').style.display = 'grid';
+  isStarted = true;
+
+  bindControls();
+});
 
 function bindControls() {
   // Glide Speed
