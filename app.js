@@ -128,13 +128,19 @@ class LaserVoice {
     this.sweepSemitones = PRESET.osc2SweepSemitones;
     this.sweepTime = PRESET.osc2SweepTime;
 
-    this.busy = false;   // true enquanto a voz estiver tocando uma nota
+    this.busy = false;
     this.note = null;
+    this.releasing = false;
+    this.availableAt = 0;
+    this.startedAt = 0;
   }
 
   // Dispara a nota. OSC1 vai direto; OSC2 pula acima e desce (sweep).
   attack(note, time = Tone.now()) {
     this.busy = true;
+    this.releasing = false;
+    this.availableAt = Infinity;
+    this.startedAt = time;
     this.note = note;
 
     const f1 = Tone.Frequency(note).toFrequency();
@@ -162,8 +168,9 @@ class LaserVoice {
 
   release(time = Tone.now()) {
     this.amp.triggerRelease(time);
-    // Libera a voz um pouco depois do fim do release.
-    this.busy = false;
+    // A voz continua reservada até o envelope terminar.
+    this.releasing = true;
+    this.availableAt = time + PRESET.envelope.release;
   }
 
   setPortamento(seconds) {
@@ -194,22 +201,44 @@ class LaserVoice {
 }
 
 // ---------------------------------------------------------------------------
-// Gerenciador poligônico simples: uma voz por nota tocada.
+// Pool de vozes: notas e polifonia são independentes.
+// Vozes em release só ficam livres após o envelope terminar.
 // ---------------------------------------------------------------------------
 class LaserHarp {
   constructor(destination, polyphony = 12) {
-    this.voices = [];
-    for (let i = 0; i < polyphony; i++) {
-      this.voices.push(new LaserVoice(destination));
-    }
-    this.active = new Map(); // note -> voice
+    this.voices = Array.from({ length: polyphony }, () => new LaserVoice(destination));
+    this.active = new Map(); // nota pressionada -> voz
   }
 
   triggerAttack(note) {
     if (this.active.has(note)) return;
-    const voice = this.voices.find((v) => !v.busy);
-    if (!voice) return; // sem vozes livres (polifonia esgotada)
-    voice.attack(note);
+    const now = Tone.now();
+    // Recupera vozes cujo release já terminou (sem timers no áudio).
+    for (const voice of this.voices) {
+      if (voice.releasing && voice.availableAt <= now) {
+        voice.busy = false;
+        voice.releasing = false;
+        voice.note = null;
+      }
+    }
+
+    let voice = this.voices.find(v => !v.busy);
+    let attackAt = now;
+    if (!voice) {
+      // Prioriza o release mais antigo; só rouba nota sustentada em último caso.
+      voice = this.voices.filter(v => v.releasing)
+        .sort((a, b) => a.availableAt - b.availableAt)[0];
+      if (!voice) {
+        voice = this.voices.reduce((oldest, v) =>
+          v.startedAt < oldest.startedAt ? v : oldest);
+        // Remove o vínculo anterior para que o keyup antigo não corte a nova nota.
+        if (this.active.get(voice.note) === voice) this.active.delete(voice.note);
+      }
+      // Transição curta para evitar descontinuidade no envelope reutilizado.
+      voice.amp.triggerRelease(now);
+      attackAt = now + 0.012;
+    }
+    voice.attack(note, attackAt);
     this.active.set(note, voice);
   }
 
@@ -221,19 +250,19 @@ class LaserHarp {
   }
 
   setPortamento(seconds) {
-    this.voices.forEach((v) => v.setPortamento(seconds));
+    this.voices.forEach(v => v.setPortamento(seconds));
   }
 
   setSweepSemitones(semitones) {
-    this.voices.forEach((v) => v.setSweepSemitones(semitones));
+    this.voices.forEach(v => v.setSweepSemitones(semitones));
   }
 
   setSweepTime(seconds) {
-    this.voices.forEach((v) => v.setSweepTime(seconds));
+    this.voices.forEach(v => v.setSweepTime(seconds));
   }
 
   setOsc2Level(level) {
-    this.voices.forEach((v) => v.setOsc2Level(level));
+    this.voices.forEach(v => v.setOsc2Level(level));
   }
 }
 
@@ -244,7 +273,7 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 11:45';
+const APP_VERSION = '2026-10-29 voice-pool';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
