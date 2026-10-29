@@ -241,6 +241,9 @@ let isStarted = false;
 let isStarting = false;
 let harp, filter, chorus, reverb;
 const activeKeys = new Set();
+const activePointers = new Map(); // pointerId -> note index
+let audioInitPromise = null;
+
 
 // UI: Renderizar teclas
 const keysContainer = document.getElementById('keyboard');
@@ -252,6 +255,27 @@ KEY_MAP.forEach((data, index) => {
     <div class="key-label">${data.label}</div>
     <div class="note-label">${data.note}</div>
   `;
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', `Tocar nota ${data.note}`);
+  el.addEventListener('pointerdown', async (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId, index);
+    try {
+      await ensureAudio();
+      if (activePointers.get(e.pointerId) === index) updateNote(index);
+    } catch (error) { console.error('Falha ao iniciar áudio:', error); }
+  });
+  const releasePointer = (e) => {
+    if (!activePointers.has(e.pointerId)) return;
+    const heldIndex = activePointers.get(e.pointerId);
+    activePointers.delete(e.pointerId);
+    updateNote(heldIndex);
+  };
+  el.addEventListener('pointerup', releasePointer);
+  el.addEventListener('pointercancel', releasePointer);
+  el.addEventListener('lostpointercapture', releasePointer);
   keysContainer.appendChild(el);
 });
 
@@ -261,7 +285,7 @@ KEY_MAP.forEach((data, index) => {
 // tecla serve de "destravamento" e normalmente ainda não soa; da segunda
 // em diante o som sai normal.
 async function initAudio() {
-  if (isStarted || isStarting) return;
+  if (isStarted) return;
   isStarting = true;
 
   await Tone.start();
@@ -293,6 +317,7 @@ async function initAudio() {
   harp = new LaserHarp(filter, 12);
 
   document.getElementById('controls').style.display = 'grid';
+  document.getElementById('controls-details').style.display = 'block';
   isStarted = true;
   isStarting = false;
 
@@ -357,38 +382,52 @@ function bindControls() {
   });
 }
 
-// Teclado
-window.addEventListener('keydown', (e) => {
-  if (e.repeat) return;
+// Compartilha as mesmas notas entre teclado físico e superfícies de toque.
+function updateNote(index) {
+  if (!isStarted) return;
+  const held = activeKeys.has(index) || [...activePointers.values()].includes(index);
+  const note = KEY_MAP[index].note;
+  const el = document.getElementById(`key-${index}`);
+  if (held) harp.triggerAttack(note);
+  else harp.triggerRelease(note);
+  if (el) el.classList.toggle('active', held);
+}
 
+function ensureAudio() {
+  if (isStarted) return Promise.resolve();
+  if (!audioInitPromise) {
+    audioInitPromise = initAudio().catch(error => {
+      isStarting = false;
+      audioInitPromise = null;
+      throw error;
+    });
+  }
+  return audioInitPromise;
+}
+
+window.addEventListener('keydown', async (e) => {
+  if (e.repeat) return;
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
-
-  // Primeira tecla destrava o áudio (gesto exigido pelo navegador).
-  // Essa tecla normalmente ainda não soa; da próxima em diante, sim.
-  if (!isStarted) {
-    initAudio();
-    return;
-  }
-
-  if (activeKeys.has(index)) return;
-
+  e.preventDefault();
   activeKeys.add(index);
-  harp.triggerAttack(KEY_MAP[index].note);
-
-  const el = document.getElementById(`key-${index}`);
-  if (el) el.classList.add('active');
+  try {
+    await ensureAudio();
+    if (activeKeys.has(index)) updateNote(index);
+  } catch (error) { console.error('Falha ao iniciar áudio:', error); }
 });
 
 window.addEventListener('keyup', (e) => {
-  if (!isStarted) return;
-
   const index = CODE_TO_INDEX.get(e.code);
-  if (index === undefined || !activeKeys.has(index)) return;
-
+  if (index === undefined) return;
+  e.preventDefault();
   activeKeys.delete(index);
-  harp.triggerRelease(KEY_MAP[index].note);
+  updateNote(index);
+});
 
-  const el = document.getElementById(`key-${index}`);
-  if (el) el.classList.remove('active');
+window.addEventListener('blur', () => {
+  const held = new Set([...activeKeys, ...activePointers.values()]);
+  activeKeys.clear();
+  activePointers.clear();
+  held.forEach(updateNote);
 });
