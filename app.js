@@ -272,7 +272,9 @@ let harp, filter, chorus, reverb, inputGain, masterGain;
 const VOLUME_KEY = 'laser-harp-master-volume-v1';
 function loadVolume() {
   try {
-    const saved = Number(localStorage.getItem(VOLUME_KEY));
+    const raw = localStorage.getItem(VOLUME_KEY);
+    if (raw === null) return 100; // primeira visita: sem preferência salva
+    const saved = Number(raw);
     return Number.isFinite(saved) && saved >= 0 && saved <= 200 ? saved : 100;
   } catch { return 100; }
 }
