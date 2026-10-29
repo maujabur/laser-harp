@@ -30,10 +30,10 @@
     }
     .controls-panel {
       display: none;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 15px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 15px 24px;
       width: 100%;
-      max-width: 800px;
+      max-width: 980px;
       background: #15181e;
       border: 1px solid #00ffcc;
       padding: 20px;
@@ -45,16 +45,23 @@
       display: flex;
       flex-direction: column;
       gap: 5px;
+      min-width: 0;
     }
     .control-group label {
       font-size: 0.85rem;
       color: #aaa;
       display: flex;
       justify-content: space-between;
+      gap: 10px;
+      white-space: nowrap;
+    }
+    .control-group label span {
+      flex: none;
     }
     .control-group input[type=range] {
       accent-color: #00ffcc;
       cursor: pointer;
+      width: 100%;
     }
 
     .keys-container {
@@ -117,40 +124,60 @@
     <input type="range" id="ctrl-volume" min="0" max="200" step="5" value="100" style="width:100%;accent-color:#00ffcc;cursor:pointer" aria-label="Volume geral">
   </div>
 
-  <details id="controls-details" style="display:none;width:100%;max-width:800px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
+  <details id="controls-details" style="display:none;width:100%;max-width:980px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
     <div class="control-group">
-      <label>Glide / Portamento (ms): <span id="val-glide">115</span></label>
-      <input type="range" id="ctrl-glide" min="5" max="250" step="5" value="115">
+      <label>Glide / Portamento (ms): <span id="val-glide">35</span></label>
+      <input type="range" id="ctrl-glide" min="5" max="250" step="5" value="35">
     </div>
 
     <div class="control-group">
-      <label>Filtro Cutoff (Hz): <span id="val-cutoff">1650</span></label>
-      <input type="range" id="ctrl-cutoff" min="200" max="8000" step="50" value="1650">
+      <label>Filtro Cutoff (Hz): <span id="val-cutoff">950</span></label>
+      <input type="range" id="ctrl-cutoff" min="200" max="8000" step="50" value="950">
     </div>
 
     <div class="control-group">
-      <label>Ressonância (Q): <span id="val-res">2</span></label>
-      <input type="range" id="ctrl-res" min="0" max="10" step="0.1" value="2">
+      <label>Ressonância (Q): <span id="val-res">3.6</span></label>
+      <input type="range" id="ctrl-res" min="0" max="10" step="0.1" value="3.6">
     </div>
 
     <div class="control-group">
-      <label>Chorus Mix: <span id="val-chorus">15%</span></label>
-      <input type="range" id="ctrl-chorus" min="0" max="1" step="0.05" value="0.15">
+      <label>Chorus Mix: <span id="val-chorus">5%</span></label>
+      <input type="range" id="ctrl-chorus" min="0" max="1" step="0.05" value="0.05">
     </div>
 
     <div class="control-group">
-      <label>Sweep OSC2 (semitons): <span id="val-sweep">7</span></label>
-      <input type="range" id="ctrl-sweep" min="0" max="12" step="0.5" value="7">
+      <label>Sweep OSC2 (semitons): <span id="val-sweep">1</span></label>
+      <input type="range" id="ctrl-sweep" min="0" max="12" step="0.5" value="1">
     </div>
 
     <div class="control-group">
-      <label>Sweep Tempo (ms): <span id="val-sweeptime">120</span></label>
-      <input type="range" id="ctrl-sweeptime" min="20" max="400" step="5" value="120">
+      <label>Sweep Tempo (ms): <span id="val-sweeptime">40</span></label>
+      <input type="range" id="ctrl-sweeptime" min="20" max="400" step="5" value="40">
     </div>
 
     <div class="control-group">
-      <label>Mix OSC2: <span id="val-osc2">32%</span></label>
-      <input type="range" id="ctrl-osc2" min="0" max="1" step="0.01" value="0.32">
+      <label>Mix OSC2: <span id="val-osc2">26%</span></label>
+      <input type="range" id="ctrl-osc2" min="0" max="1" step="0.01" value="0.26">
+    </div>
+
+    <div class="control-group">
+      <label>Attack (ms): <span id="val-attack">10</span></label>
+      <input type="range" id="ctrl-attack" min="1" max="2000" step="1" value="10">
+    </div>
+
+    <div class="control-group">
+      <label>Decay (ms): <span id="val-decay">400</span></label>
+      <input type="range" id="ctrl-decay" min="1" max="2000" step="1" value="400">
+    </div>
+
+    <div class="control-group">
+      <label>Sustain: <span id="val-sustain">55%</span></label>
+      <input type="range" id="ctrl-sustain" min="0" max="1" step="0.01" value="0.55">
+    </div>
+
+    <div class="control-group">
+      <label>Release (ms): <span id="val-release">500</span></label>
+      <input type="range" id="ctrl-release" min="1" max="4000" step="10" value="500">
     </div>
   </div>
 
@@ -166,6 +193,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=20261029-pi-optimizations" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=20261029-defaults-adsr" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>

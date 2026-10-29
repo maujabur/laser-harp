@@ -56,12 +56,12 @@ const PRESET = {
 
   // "Pitch sweep" do OSC2: de quantos semitons ele parte ACIMA do alvo e
   // quanto tempo leva para assentar. É o coração do "poinnn".
-  osc2SweepSemitones: 7,
-  osc2SweepTime: 0.12,     // segundos (o glide descendente do OSC2)
+  osc2SweepSemitones: 1,
+  osc2SweepTime: 0.04,     // segundos (o glide descendente do OSC2)
 
   // Mistura dos dois osciladores (ganho relativo).
   osc1Level: 0.55,
-  osc2Level: 0.32,
+  osc2Level: 0.26,
 
   // Largura de pulso base de cada oscilador (0 = onda quadrada pura).
   osc1Width: 0.1,
@@ -75,11 +75,11 @@ const PRESET = {
   envelope: { attack: 0.01, decay: 0.4, sustain: 0.55, release: 0.5 },
 
   // Portamento (glide) global entre notas, em segundos.
-  portamento: 0.115,
+  portamento: 0.035,
 
   // Cadeia de efeitos (reverb removido para aliviar o Raspberry Pi).
-  filter:  { frequency: 1650, Q: 2 },
-  chorus:  { frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.15 }
+  filter:  { frequency: 950, Q: 3.6 },
+  chorus:  { frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.05 }
 };
 
 // ---------------------------------------------------------------------------
@@ -163,9 +163,11 @@ class LaserVoice {
 
   release(time = Tone.now()) {
     this.amp.triggerRelease(time);
-    // A voz continua reservada até o envelope terminar.
+    // A voz continua reservada até o envelope terminar. Usa o release ATUAL
+    // do envelope (pode ter sido ajustado em runtime) e não o valor fixo do
+    // preset, para não cortar o rabo da nota quando o release é aumentado.
     this.releasing = true;
-    this.availableAt = time + PRESET.envelope.release;
+    this.availableAt = time + Number(this.amp.release);
   }
 
   setPortamento(seconds) {
@@ -258,6 +260,10 @@ class LaserHarp {
   setOsc2Level(level) {
     this.voices.forEach(v => v.setOsc2Level(level));
   }
+
+  setEnvelope(param, value) {
+    this.voices.forEach(v => { v.amp[param] = value; });
+  }
 }
 
 let isStarted = false;
@@ -267,10 +273,10 @@ const VOLUME_KEY = 'laser-harp-master-volume-v1';
 function loadVolume() {
   try {
     const raw = localStorage.getItem(VOLUME_KEY);
-    if (raw === null) return 100; // primeira visita: sem preferência salva
+    if (raw === null) return 170; // primeira visita: sem preferência salva
     const saved = Number(raw);
-    return Number.isFinite(saved) && saved >= 0 && saved <= 200 ? saved : 100;
-  } catch { return 100; }
+    return Number.isFinite(saved) && saved >= 0 && saved <= 200 ? saved : 170;
+  } catch { return 170; }
 }
 let masterVolume = loadVolume();
 function setMasterVolume(percent) {
@@ -286,7 +292,7 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 pi-optimizations';
+const APP_VERSION = '2026-10-29 defaults-adsr';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
@@ -444,6 +450,35 @@ function bindControls() {
     const val = parseFloat(e.target.value);
     document.getElementById('val-osc2').innerText = `${Math.round(val * 100)}%`;
     harp.setOsc2Level(val);
+  });
+
+  // Envelope ADSR (AmplitudeEnvelope de cada voz). Vale da próxima nota.
+  // Attack (ms -> s)
+  document.getElementById('ctrl-attack').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    document.getElementById('val-attack').innerText = val;
+    harp.setEnvelope('attack', val / 1000);
+  });
+
+  // Decay (ms -> s)
+  document.getElementById('ctrl-decay').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    document.getElementById('val-decay').innerText = val;
+    harp.setEnvelope('decay', val / 1000);
+  });
+
+  // Sustain (0 a 1)
+  document.getElementById('ctrl-sustain').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-sustain').innerText = `${Math.round(val * 100)}%`;
+    harp.setEnvelope('sustain', val);
+  });
+
+  // Release (ms -> s)
+  document.getElementById('ctrl-release').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    document.getElementById('val-release').innerText = val;
+    harp.setEnvelope('release', val / 1000);
   });
 }
 
