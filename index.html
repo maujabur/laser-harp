@@ -91,6 +91,10 @@
       margin-top: 4px;
     }
     .keys-container { width: 100%; touch-action: none; }
+    @media (min-width: 900px) {
+      .keys-container { max-width: 1280px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+      .key-box { min-width: 0; padding: 15px 6px; }
+    }
     .key-box { flex: 1 1 72px; min-height: 76px; display: flex; flex-direction: column; justify-content: center; }
     .controls-panel summary { cursor: pointer; font-weight: bold; }
     @media (max-width: 600px) {
@@ -107,6 +111,11 @@
   <h1>ELKA SYNTHEX - HARPA LASER</h1>
   <p>Preset Nr. 46 (Pitch Glide Modulated Synced OSC) | Tone.js Engine</p>
   <p>Toque ou pressione uma tecla para tocar (o primeiro gesto ativa o áudio)</p>
+
+  <div class="control-group" style="width:100%;max-width:800px;margin:0 0 14px">
+    <label for="ctrl-volume" style="color:#00ffcc;display:flex;justify-content:space-between">Volume geral (↑ / ↓): <span id="val-volume">100%</span></label>
+    <input type="range" id="ctrl-volume" min="0" max="200" step="5" value="100" style="width:100%;accent-color:#00ffcc;cursor:pointer" aria-label="Volume geral">
+  </div>
 
   <details id="controls-details" style="display:none;width:100%;max-width:800px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
     <div class="control-group">
@@ -162,6 +171,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=20261029-voice-pool" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=20261029-desktop-volume" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
