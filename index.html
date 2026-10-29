@@ -65,6 +65,10 @@
       max-width: 800px;
     }
     .key-box {
+      touch-action: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
       border: 1px solid #00ffcc;
       padding: 15px 18px;
       border-radius: 4px;
@@ -86,15 +90,25 @@
       opacity: 0.8;
       margin-top: 4px;
     }
+    .keys-container { width: 100%; touch-action: none; }
+    .key-box { flex: 1 1 72px; min-height: 76px; display: flex; flex-direction: column; justify-content: center; }
+    .controls-panel summary { cursor: pointer; font-weight: bold; }
+    @media (max-width: 600px) {
+      body { padding: 12px; justify-content: flex-start; }
+      h1 { font-size: 1.3rem; text-align: center; }
+      p { text-align: center; }
+      .keys-container { gap: 7px; }
+      .key-box { flex-basis: 25%; min-width: 0; padding: 12px 4px; }
+    }
   </style>
 </head>
 <body>
 
   <h1>ELKA SYNTHEX - HARPA LASER</h1>
   <p>Preset Nr. 46 (Pitch Glide Modulated Synced OSC) | Tone.js Engine</p>
-  <p>Pressione uma tecla para começar (a primeira tecla liga o som)</p>
+  <p>Toque ou pressione uma tecla para tocar (o primeiro gesto ativa o áudio)</p>
 
-  <div class="controls-panel" id="controls">
+  <details id="controls-details" style="display:none;width:100%;max-width:800px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
     <div class="control-group">
       <label>Glide / Portamento (ms): <span id="val-glide">115</span></label>
       <input type="range" id="ctrl-glide" min="5" max="250" step="5" value="115">
@@ -135,6 +149,8 @@
       <input type="range" id="ctrl-osc2" min="0" max="1" step="0.01" value="0.32">
     </div>
   </div>
+
+  </details>
 
   <div class="keys-container" id="keyboard"></div>
 
