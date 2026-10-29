@@ -243,6 +243,13 @@ let harp, filter, chorus, reverb;
 const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
+const audioStatus = document.getElementById('audio-status');
+const audioButton = document.getElementById('start-audio');
+function setAudioStatus(message, error = false) {
+  audioStatus.textContent = message;
+  audioStatus.style.color = error ? '#ff9292' : '#00ffcc';
+}
+audioButton.addEventListener('click', () => { ensureAudio().catch(() => {}); });
 
 
 // UI: Renderizar teclas
@@ -287,7 +294,7 @@ KEY_MAP.forEach((data, index) => {
 async function initAudio() {
   if (isStarted) return;
   isStarting = true;
-
+  setAudioStatus('Inicializando áudio…');
   await Tone.start();
   Tone.context.latencyHint = 'interactive';
 
@@ -320,6 +327,8 @@ async function initAudio() {
   document.getElementById('controls-details').style.display = 'block';
   isStarted = true;
   isStarting = false;
+  setAudioStatus('Áudio ativo — toque nas notas');
+  audioButton.style.display = 'none';
 
   bindControls();
 }
@@ -399,6 +408,8 @@ function ensureAudio() {
     audioInitPromise = initAudio().catch(error => {
       isStarting = false;
       audioInitPromise = null;
+      setAudioStatus(`Falha no áudio: ${error?.message || String(error)}`, true);
+      audioButton.textContent = 'Tentar ativar áudio novamente';
       throw error;
     });
   }
