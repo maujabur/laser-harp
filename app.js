@@ -76,30 +76,42 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   }).connect(chorus);
 
   // 3. Sintetizador com Portamento (Glide) ativado
+ // --- EFEITOS E FILTRO ---
+  reverb = new Tone.Reverb({ decay: 3.2, wet: 0.35 }).toDestination();
+  
+  // Chorus modo 1 do Synthex (frequência baixa, profundidade alta)
+  chorus = new Tone.Chorus({ frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.55 }).connect(reverb).start();
+
+  filter = new Tone.Filter({
+    frequency: 2400,
+    type: 'lowpass',
+    rolloff: -24,
+    Q: 1.2
+  }).connect(chorus);
+
+  // --- SINTETIZADOR DUAL-OSCILLATOR (MODELAGEM PRESET 46 SYNTHEX) ---
   polySynth = new Tone.PolySynth(Tone.Synth, {
     maxPolyphony: 12,
     options: {
       oscillator: {
-        type: 'fatsawtooth',
-        count: 3,
-        spread: 30
+        type: 'pwm',          // Pulse Width Modulation no oscilador principal
+        modulationFrequency: 0.3 // LFO lento modulando a largura de pulso (LFO -> PWM)
       },
       envelope: {
-        attack: 0.005,
-        decay: 0.35,
-        sustain: 0.4,
-        release: 0.3
+        attack: 0.005, // Ataque instantâneo sem estalo
+        decay: 0.4,
+        sustain: 0.6,
+        release: 0.4
       },
-      portamento: 0.045 // 45ms de Glide padrão (Preset 46 do Synthex)
+      portamento: 0.05 // Glide rápido
     }
   }).connect(filter);
 
-  document.getElementById('start-btn').style.display = 'none';
-  document.getElementById('controls').style.display = 'grid';
-  isStarted = true;
-
-  bindControls();
-});
+  // Aplicação do Pitch Bend/Glide Agressivo focado em simular o Hard Sync
+  polySynth.set({
+    pitchDecay: 0.045, // 45ms de variação harmônica
+    octaves: 2.7,      // Equivale ao salto de oitavas (8' para 2' + 7 semitons do OSC2)
+  });
 
 function bindControls() {
   // Glide Speed
