@@ -239,7 +239,7 @@ class LaserHarp {
 
 let isStarted = false;
 let isStarting = false;
-let harp, filter, chorus, reverb;
+let harp, filter, chorus, reverb, inputGain;
 const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
@@ -322,8 +322,12 @@ async function initAudio() {
     Q: PRESET.filter.Q
   }).connect(chorus);
 
+  // Teste móvel: atenuação de -12 dB ANTES dos efeitos, sem mudar o timbre.
+  // 10 ^ (-12 / 20) = 0.2511886; todas as vozes somam neste estágio.
+  inputGain = new Tone.Gain(0.2511886).connect(filter);
+
   // Instrumento dual-oscilador (modelagem Preset 46 Synthex).
-  harp = new LaserHarp(filter, 12);
+  harp = new LaserHarp(inputGain, 12);
 
   document.getElementById('controls').style.display = 'grid';
   document.getElementById('controls-details').style.display = 'block';
