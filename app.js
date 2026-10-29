@@ -77,17 +77,16 @@ const PRESET = {
   // Portamento (glide) global entre notas, em segundos.
   portamento: 0.115,
 
-  // Cadeia de efeitos.
+  // Cadeia de efeitos (reverb removido para aliviar o Raspberry Pi).
   filter:  { frequency: 1650, Q: 2 },
-  chorus:  { frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.15 },
-  reverb:  { decay: 3.2, wet: 0.34 }
+  chorus:  { frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.15 }
 };
 
 // ---------------------------------------------------------------------------
 // Voz dual-oscilador. Cada voz é alocada a uma nota enquanto ela soa.
 // ---------------------------------------------------------------------------
 class LaserVoice {
-  constructor(destination) {
+  constructor(destination, pwmLfo) {
     // Envelope de amplitude compartilhado -> destino (filtro).
     this.amp = new Tone.AmplitudeEnvelope(PRESET.envelope).connect(destination);
 
@@ -109,18 +108,14 @@ class LaserVoice {
     this.osc2.connect(this.gain2);
     this.gain2.connect(this.amp);
 
-    // LFO triangular modulando a largura de pulso do OSC2 (tremor constante).
-    this.pwmLfo = new Tone.LFO({
-      type: 'triangle',
-      frequency: PRESET.pwmLfoRate,
-      min: PRESET.osc2Width - PRESET.pwmLfoDepth,
-      max: PRESET.osc2Width + PRESET.pwmLfoDepth
-    });
-    this.pwmLfo.connect(this.osc2.width);
+    // LFO triangular (ÚNICO, compartilhado por todas as vozes) modulando a
+    // largura de pulso do OSC2. Todas as vozes "respiram" na mesma fase, o
+    // que troca 12 LFOs por 1 só — bem mais leve para o Pi, sem efeito
+    // colateral audível.
+    pwmLfo.connect(this.osc2.width);
 
     this.osc1.start();
     this.osc2.start();
-    this.pwmLfo.start();
 
     // Parâmetros ajustáveis em tempo real (valem a partir da próxima nota).
     this.portamento = PRESET.portamento;
@@ -195,7 +190,6 @@ class LaserVoice {
     this.osc2.dispose();
     this.gain1.dispose();
     this.gain2.dispose();
-    this.pwmLfo.dispose();
     this.amp.dispose();
   }
 }
@@ -205,8 +199,8 @@ class LaserVoice {
 // Vozes em release só ficam livres após o envelope terminar.
 // ---------------------------------------------------------------------------
 class LaserHarp {
-  constructor(destination, polyphony = 12) {
-    this.voices = Array.from({ length: polyphony }, () => new LaserVoice(destination));
+  constructor(destination, pwmLfo, polyphony = 12) {
+    this.voices = Array.from({ length: polyphony }, () => new LaserVoice(destination, pwmLfo));
     this.active = new Map(); // nota pressionada -> voz
   }
 
@@ -268,7 +262,7 @@ class LaserHarp {
 
 let isStarted = false;
 let isStarting = false;
-let harp, filter, chorus, reverb, inputGain, masterGain;
+let harp, filter, chorus, inputGain, masterGain, pwmLfo;
 const VOLUME_KEY = 'laser-harp-master-volume-v1';
 function loadVolume() {
   try {
@@ -292,7 +286,7 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 desktop-volume';
+const APP_VERSION = '2026-10-29 pi-optimizations';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
@@ -354,10 +348,8 @@ async function initAudio() {
   masterGain = new Tone.Gain(masterVolume / 100).toDestination();
 
   // --- EFEITOS E FILTRO ---
-  reverb = new Tone.Reverb({
-    decay: PRESET.reverb.decay,
-    wet: PRESET.reverb.wet
-  }).connect(masterGain);
+  // Reverb removido para aliviar a CPU (Raspberry Pi). O "rabo" suave ao
+  // soltar a tecla continua vindo do release do AmplitudeEnvelope da voz.
 
   // Chorus modo 1 do Synthex (frequência baixa, profundidade alta).
   chorus = new Tone.Chorus({
@@ -365,13 +357,14 @@ async function initAudio() {
     delayTime: PRESET.chorus.delayTime,
     depth: PRESET.chorus.depth,
     wet: PRESET.chorus.wet
-  }).connect(reverb).start();
+  }).connect(masterGain).start();
 
-  // Filtro Low-Pass 24 dB/oct.
+  // Filtro Low-Pass 12 dB/oct (metade do custo do -24; timbre levemente
+  // mais aberto, mas mais leve para o Pi).
   filter = new Tone.Filter({
     frequency: PRESET.filter.frequency,
     type: 'lowpass',
-    rolloff: -24,
+    rolloff: -12,
     Q: PRESET.filter.Q
   }).connect(chorus);
 
@@ -379,8 +372,16 @@ async function initAudio() {
   // 10 ^ (-12 / 20) = 0.2511886; todas as vozes somam neste estágio.
   inputGain = new Tone.Gain(0.2511886).connect(filter);
 
+  // LFO triangular ÚNICO, compartilhado por todas as vozes (PWM do OSC2).
+  pwmLfo = new Tone.LFO({
+    type: 'triangle',
+    frequency: PRESET.pwmLfoRate,
+    min: PRESET.osc2Width - PRESET.pwmLfoDepth,
+    max: PRESET.osc2Width + PRESET.pwmLfoDepth
+  }).start();
+
   // Instrumento dual-oscilador (modelagem Preset 46 Synthex).
-  harp = new LaserHarp(inputGain, 12);
+  harp = new LaserHarp(inputGain, pwmLfo, 12);
 
   document.getElementById('controls').style.display = 'grid';
   document.getElementById('controls-details').style.display = 'block';
@@ -415,13 +416,6 @@ function bindControls() {
     const val = parseFloat(e.target.value);
     document.getElementById('val-res').innerText = val;
     filter.Q.rampTo(val, 0.05);
-  });
-
-  // Reverb
-  document.getElementById('ctrl-reverb').addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value);
-    document.getElementById('val-reverb').innerText = `${Math.round(val * 100)}%`;
-    reverb.wet.rampTo(val, 0.05);
   });
 
   // Chorus
