@@ -5,8 +5,8 @@
 // 1. Tabela de NOTAS — a escala tocada, da mais grave para a mais aguda.
 //    Ajuste aqui para mudar a afinação sem mexer nas teclas físicas.
 const NOTES = [
-  'C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2',
-  'C3', 'D3', 'E3', 'F3', 'G3'
+  'G1', 'C2', 'Eb2', 'F2', 'G2', 'Bb2',
+  'C3', 'Eb3', 'F3', 'G3', 'Bb3', 'C4'
 ];
 
 // 2. Tabela de TECLAS físicas — o código do teclado (event.code) e o rótulo
