@@ -137,9 +137,7 @@ const PRESET = {
   osc2Type: 'pulse',
 
   // Largura de pulso base de cada oscilador (0 = onda quadrada pura).
-  // Só tem efeito quando o tipo é 'pulse'. Estes são os valores "encorpados"
-  // (preset "Harpa Suave"); o caráter "fiel ao Synthex" (pulsos estreitos)
-  // vive no preset "Synthex Fiel". Compare os dois no seletor.
+  // Só tem efeito quando o tipo é 'pulse'.
   osc1Width: 0.1,
   osc2Width: -0.2,
 
@@ -208,38 +206,9 @@ const FACTORY_PRESETS = [
     glide: 15, cutoff: 7.0, res: 1.0, chorus: 0.12, sweep: 0.5, sweeptime: 40,
     osc2: 0.35, attack: 4, decay: 900, sustain: 0.15, release: 700,
     scale: 'penta-maior', root: 'G2'
-  },
-  {
-    // A/B 1: calibrado para o patch documentado do Synthex (pulsos estreitos,
-    // LFO ~3 Hz). Compare com "Harpa Suave" abaixo.
-    id: 'synthex-fiel', label: 'Synthex Fiel',
-    wave1: 'pulse', wave2: 'pulse',
-    width1: -0.6, width2: -0.6, pwmRate: 3.0, pwmDepth: 0.3,
-    glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, sweep: 1, sweeptime: 40,
-    osc2: 0.26, attack: 10, decay: 400, sustain: 0.55, release: 500,
-    scale: 'penta-menor', root: 'C2'
-  },
-  {
-    // A/B 2: o caráter mais encorpado de antes dos ajustes finos (pulsos
-    // largos, LFO lento). Compare com "Synthex Fiel" acima.
-    id: 'harpa-suave', label: 'Harpa Suave',
-    wave1: 'pulse', wave2: 'pulse',
-    width1: 0.1, width2: -0.2, pwmRate: 1.5, pwmDepth: 0.25,
-    glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, sweep: 1, sweeptime: 40,
-    osc2: 0.26, attack: 10, decay: 400, sustain: 0.55, release: 500,
-    scale: 'penta-menor', root: 'C2'
   }
 ];
 const DEFAULT_PRESET_ID = 'harpa-classica';
-
-// Valores de PWM/width usados quando um preset não especifica (vêm do PRESET).
-const PWM_DEFAULTS = {
-  width1: PRESET.osc1Width, width2: PRESET.osc2Width,
-  pwmRate: PRESET.pwmLfoRate, pwmDepth: PRESET.pwmLfoDepth
-};
-// Estado corrente de width/PWM (não têm slider). Atualizado por applyPreset e
-// lido por readCurrentVibe ao salvar uma vibe do usuário.
-let currentPwm = { ...PWM_DEFAULTS };
 
 // ---------------------------------------------------------------------------
 // Voz dual-oscilador. Cada voz é alocada a uma nota enquanto ela soa.
@@ -288,11 +257,6 @@ class LaserVoice {
     this.gain2 = new Tone.Gain(PRESET.osc2Level);
     this.osc2.connect(this.gain2);
     this.gain2.connect(this.amp);
-
-    // Largura de pulso base de cada oscilador (estado, para reaplicar ao voltar
-    // a 'pulse' e para o LFO de PWM calcular seu range em torno do OSC2).
-    this.width1 = PRESET.osc1Width;
-    this.width2 = PRESET.osc2Width;
 
     this.osc1.start();
     this.osc2.start();
@@ -409,18 +373,9 @@ class LaserVoice {
     }
     osc.type = type;
     if (osc.width) {
-      osc.width.value = (which === 'osc2' ? this.width2 : this.width1);
+      osc.width.value = (which === 'osc2' ? PRESET.osc2Width : PRESET.osc1Width);
     }
     if (which === 'osc2') this.updatePwm();
-  }
-
-  // Largura de pulso base dos dois osciladores (vale quando são 'pulse').
-  setWidths(w1, w2) {
-    this.width1 = w1;
-    this.width2 = w2;
-    if (this.osc1.width) this.osc1.width.value = w1;
-    if (this.osc2.width && !this.pwmConnected) this.osc2.width.value = w2;
-    // Se o PWM está conectado, o LFO controla o width do OSC2 (ver setPwm).
   }
 
   // Fator de key tracking do filtro (vale da próxima nota em diante).
@@ -462,7 +417,6 @@ function filterCompensation(keyTrack) {
 // ---------------------------------------------------------------------------
 class LaserHarp {
   constructor(destination, pwmLfo, polyphony = 12) {
-    this.pwmLfo = pwmLfo; // LFO único compartilhado (PWM do OSC2)
     this.voices = Array.from({ length: polyphony }, () => new LaserVoice(destination, pwmLfo));
     this.active = new Map(); // nota pressionada -> voz
   }
@@ -534,27 +488,6 @@ class LaserHarp {
     this.voices.forEach(v => v.setWaveform(which, type));
   }
 
-  setWidths(w1, w2) {
-    this.voices.forEach(v => v.setWidths(w1, w2));
-    this.applyPwmRange(); // o range do LFO depende do width2
-  }
-
-  // Ajusta o LFO único de PWM: frequência e profundidade (range em torno do
-  // width2 base das vozes). Afeta todas as vozes de uma vez (um nó só).
-  setPwm(rate, depth) {
-    this.pwmDepth = depth;
-    if (this.pwmLfo) this.pwmLfo.frequency.value = rate;
-    this.applyPwmRange();
-  }
-
-  applyPwmRange() {
-    if (!this.pwmLfo) return;
-    const w2 = this.voices[0] ? this.voices[0].width2 : PRESET.osc2Width;
-    const depth = this.pwmDepth !== undefined ? this.pwmDepth : PRESET.pwmLfoDepth;
-    this.pwmLfo.min = w2 - depth;
-    this.pwmLfo.max = w2 + depth;
-  }
-
   setEnvelope(param, value) {
     this.voices.forEach(v => { v.amp[param] = value; });
   }
@@ -592,7 +525,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29s';
+const JS_VERSION = '2026-10-29t';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -841,8 +774,6 @@ function applyControlValues() {
   const val = (id) => document.getElementById(id).value;
   harp.setWaveform('osc1', val('ctrl-wave1'));
   harp.setWaveform('osc2', val('ctrl-wave2'));
-  harp.setWidths(currentPwm.width1, currentPwm.width2);
-  harp.setPwm(currentPwm.pwmRate, currentPwm.pwmDepth);
   harp.setPortamento(num('ctrl-glide') / 1000);
   harp.setFilterKeyTrack(num('ctrl-cutoff'));
   harp.setFilterQ(num('ctrl-res'));
@@ -898,11 +829,6 @@ function readCurrentVibe() {
   vibe.wave2 = val('ctrl-wave2');
   vibe.scale = val('ctrl-scale');
   vibe.root = val('ctrl-root');
-  // width/PWM não têm slider; vêm do estado corrente.
-  vibe.width1 = currentPwm.width1;
-  vibe.width2 = currentPwm.width2;
-  vibe.pwmRate = currentPwm.pwmRate;
-  vibe.pwmDepth = currentPwm.pwmDepth;
   return vibe;
 }
 
@@ -932,16 +858,6 @@ function applyPreset(id) {
   const wave2Sel = document.getElementById('ctrl-wave2');
   if (wave1Sel) { wave1Sel.value = preset.wave1; harp?.setWaveform('osc1', preset.wave1); }
   if (wave2Sel) { wave2Sel.value = preset.wave2; harp?.setWaveform('osc2', preset.wave2); }
-
-  // Largura de pulso e PWM (sem slider; vêm do preset ou dos defaults). Ordem:
-  // widths primeiro, depois PWM (o range do LFO depende do width2).
-  const width1 = preset.width1 !== undefined ? preset.width1 : PWM_DEFAULTS.width1;
-  const width2 = preset.width2 !== undefined ? preset.width2 : PWM_DEFAULTS.width2;
-  const pwmRate = preset.pwmRate !== undefined ? preset.pwmRate : PWM_DEFAULTS.pwmRate;
-  const pwmDepth = preset.pwmDepth !== undefined ? preset.pwmDepth : PWM_DEFAULTS.pwmDepth;
-  currentPwm = { width1, width2, pwmRate, pwmDepth };
-  harp?.setWidths(width1, width2);
-  harp?.setPwm(pwmRate, pwmDepth);
 
   // Escala + nota base (reafina as 12 teclas com segurança).
   const scaleSel = document.getElementById('ctrl-scale');
