@@ -136,14 +136,18 @@ const PRESET = {
   osc1Type: 'pulse',
   osc2Type: 'pulse',
 
-  // Largura de pulso base de cada oscilador (0 = onda quadrada pura).
-  // Só tem efeito quando o tipo é 'pulse'.
-  osc1Width: 0.1,
-  osc2Width: -0.2,
+  // Largura de pulso base de cada oscilador (0 = onda quadrada pura; extremos
+  // = pulso estreito). Só tem efeito quando o tipo é 'pulse'.
+  // O patch original do Synthex usa Pulse Width -1 (pulso bem estreito) nos
+  // dois osciladores; aproximamos com pulsos estreitos (sem ir ao extremo
+  // absoluto, que afinaria o sinal fino demais).
+  osc1Width: -0.6,
+  osc2Width: -0.6,
 
   // LFO triangular modulando a largura de pulso do OSC2 (tremor analógico).
-  pwmLfoRate: 1.5,         // Hz — lento
-  pwmLfoDepth: 0.25,       // profundidade da variação de width
+  // Patch original: LFO triangular -> PW2, Depth 3, Frequency 3.
+  pwmLfoRate: 3.0,         // Hz (≈ "Frequency 3" do Synthex)
+  pwmLfoDepth: 0.3,        // profundidade (≈ "Depth 3")
 
   // Envelope de amplitude (compartilhado pelos dois osciladores da voz).
   envelope: { attack: 0.01, decay: 0.4, sustain: 0.55, release: 0.5 },
@@ -525,7 +529,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29q';
+const JS_VERSION = '2026-10-29r';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
