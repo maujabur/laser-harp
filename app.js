@@ -560,7 +560,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29ab';
+const JS_VERSION = '2026-10-29ac';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -946,7 +946,7 @@ function applyPreset(id) {
   const scaleSel = document.getElementById('ctrl-scale');
   const rootSel = document.getElementById('ctrl-root');
   if (scaleSel) scaleSel.value = preset.scale;
-  if (rootSel) { ensureRootOption(preset.root); rootSel.value = preset.root; }
+  if (rootSel) rootSel.value = preset.root;
   retune(preset.root, preset.scale);
   // Aplicar um preset DESCARTA as alterações: vira o preset selecionado,
   // esconde a entrada "✎ Não salvo" e marca o seletor no preset real.
@@ -1077,45 +1077,79 @@ function showToast(message, isError = false) {
 // sliders + os extras (ondas, escala, nota).
 const VIBE_FIELDS = [...Object.keys(PRESET_SLIDER), 'wave1', 'wave2', 'scale', 'root'];
 
-// Preenche campos ausentes com os do preset padrão (migração de arquivos
-// antigos — ex.: sem 'interval'). Mantém o formato sempre completo.
+const WAVE_TYPES = ['pulse', 'sawtooth', 'square', 'triangle', 'sine'];
+
+// Valida e normaliza um campo numérico contra o range/step do próprio slider
+// (fonte da verdade). Clampa aos limites e arredonda ao step. Valor inválido
+// cai no default.
+function normalizeNumericField(sliderId, value, fallback) {
+  const el = document.getElementById(sliderId);
+  let n = Number(value);
+  if (!Number.isFinite(n)) n = Number(fallback);
+  if (!el) return n;
+  const min = parseFloat(el.min), max = parseFloat(el.max), step = parseFloat(el.step) || 1;
+  if (Number.isFinite(min)) n = Math.max(min, n);
+  if (Number.isFinite(max)) n = Math.min(max, n);
+  if (Number.isFinite(step) && Number.isFinite(min)) {
+    n = min + Math.round((n - min) / step) * step;
+    n = Math.round(n * 1e6) / 1e6; // evita lixo de ponto flutuante
+  }
+  return n;
+}
+
+// Produz uma vibe CANÔNICA: todo campo validado/normalizado contra sua lista
+// ou range. Assim valores inválidos (root fora da lista, números fora do
+// range, ondas/escalas desconhecidas) nunca entram — e a comparação sempre
+// se reproduz (conserta reimportar fábrica, mesma vibe, roots exóticos).
 function fixVibe(obj) {
   const base = presetById(DEFAULT_PRESET_ID);
+  const o = obj || {};
   const vibe = { version: VIBE_VERSION };
-  for (const f of VIBE_FIELDS) {
-    const v = obj ? obj[f] : undefined;
-    // undefined OU string vazia caem no default (evita root:"" / scale:"").
-    vibe[f] = (v !== undefined && v !== '') ? v : base[f];
+
+  // Numéricos (sliders): clamp + step a partir da definição do próprio slider.
+  for (const [field, sliderId] of Object.entries(PRESET_SLIDER)) {
+    vibe[field] = normalizeNumericField(sliderId, o[field], base[field]);
   }
-  vibe.name = (obj && typeof obj.name === 'string' && obj.name.trim()) ? obj.name.trim() : 'Vibe importada';
+  // Ondas: só tipos válidos.
+  vibe.wave1 = WAVE_TYPES.includes(o.wave1) ? o.wave1 : base.wave1;
+  vibe.wave2 = WAVE_TYPES.includes(o.wave2) ? o.wave2 : base.wave2;
+  // Escala: só ids conhecidos.
+  vibe.scale = SCALES.some(s => s.id === o.scale) ? o.scale : base.scale;
+  // Nota base: só da lista segura (Opção A — nada de C5 exótico no dropdown).
+  vibe.root = ROOT_NOTES.includes(o.root) ? o.root : base.root;
+
+  vibe.name = (typeof o.name === 'string' && o.name.trim()) ? o.name.trim() : 'Vibe importada';
   return vibe;
 }
 
-// Duas vibes são "iguais" se nome + todos os campos batem.
 // Compara dois valores de campo: números como NÚMEROS (4 == 4.0), o resto como
-// texto. A 'version' NÃO entra (é só o formato do arquivo, não parte do som).
+// texto.
 function fieldsEqual(x, y) {
   const nx = Number(x), ny = Number(y);
   if (!Number.isNaN(nx) && !Number.isNaN(ny)) return nx === ny;
   return String(x) === String(y);
 }
+// Duas vibes têm o MESMO SOM se todos os parâmetros batem. Nome e version NÃO
+// entram — o que define uma vibe é o som, não o rótulo.
 function vibesAreEqual(a, b) {
   if (!a || !b) return false;
-  if ((a.name || '') !== (b.name || '')) return false;
   return VIBE_FIELDS.every(f => fieldsEqual(a[f], b[f]));
 }
 
-// Adiciona uma vibe à lista do usuário com a regra de duplicata combinada:
-// - idêntica (nome + params) -> ignora;
-// - mesmo nome, params diferentes -> renomeia "Nome (2)", "(3)"...;
-// - nova -> adiciona.
-// Retorna {status, index} para feedback.
+// Adiciona uma vibe com a regra de duplicata (comparação SÓ pelo som):
+// - mesmo som de um preset de FÁBRICA -> não adiciona; retorna o id de fábrica;
+// - mesmo som de uma vibe do USUÁRIO -> não adiciona; retorna o índice dela;
+// - som novo -> adiciona (resolvendo colisão de nome com "(2)", "(3)"...).
 function addUserVibe(vibe) {
-  // Idêntica a alguma existente? ignora.
-  const sameIdx = userPresets.findIndex(v => vibesAreEqual(v, vibe));
-  if (sameIdx >= 0) return { status: 'duplicate', index: sameIdx };
+  // Já existe de fábrica (mesmo som)?
+  const factory = FACTORY_PRESETS.find(p => vibesAreEqual(p, vibe));
+  if (factory) return { status: 'factory', id: factory.id, name: factory.label };
 
-  // Resolve colisão de nome (params diferentes).
+  // Já existe entre as minhas vibes (mesmo som)?
+  const sameIdx = userPresets.findIndex(v => vibesAreEqual(v, vibe));
+  if (sameIdx >= 0) return { status: 'duplicate', index: sameIdx, name: userPresets[sameIdx].name };
+
+  // Som novo: resolve colisão de NOME (vibes diferentes com nome igual).
   let name = vibe.name;
   if (userPresets.some(v => (v.name || '') === name)) {
     let n = 2;
@@ -1125,7 +1159,7 @@ function addUserVibe(vibe) {
   const stored = { ...vibe, name };
   userPresets.push(stored);
   saveUserPresets(userPresets);
-  return { status: 'added', index: userPresets.length - 1 };
+  return { status: 'added', index: userPresets.length - 1, name };
 }
 
 // Exporta o ESTADO ATUAL como arquivo .harpa.json (download).
@@ -1161,13 +1195,22 @@ function importVibeFile(file) {
     }
     const vibe = fixVibe(parsed);
     const res = addUserVibe(vibe);
-    populatePresetControl(`user:${res.index}`);
-    applyPreset(`user:${res.index}`);
-    updateDeleteButton();
-    if (res.status === 'duplicate') {
-      showToast(`"${vibe.name}" já existe — selecionada`);
+    if (res.status === 'factory') {
+      // Mesmo som de um preset de fábrica: só seleciona, não cria cópia.
+      populatePresetControl(res.id);
+      applyPreset(res.id);
+      updateDeleteButton();
+      showToast(`Já existe de fábrica: "${res.name}" — selecionada`);
+    } else if (res.status === 'duplicate') {
+      populatePresetControl(`user:${res.index}`);
+      applyPreset(`user:${res.index}`);
+      updateDeleteButton();
+      showToast(`"${res.name}" já existe — selecionada`);
     } else {
-      showToast(`Vibe "${userPresets[res.index].name}" importada`);
+      populatePresetControl(`user:${res.index}`);
+      applyPreset(`user:${res.index}`);
+      updateDeleteButton();
+      showToast(`Vibe "${res.name}" importada`);
     }
   };
   fr.onerror = () => showToast('Erro ao ler o arquivo', true);
@@ -1198,7 +1241,12 @@ function loadWorkState() {
     const raw = localStorage.getItem(WORKSTATE_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    return (s && typeof s === 'object') ? s : null;
+    if (!s || typeof s !== 'object') return null;
+    // Normaliza (um save antigo pode ter root exótico tipo C5); preserva o
+    // preset de referência.
+    const norm = fixVibe(s);
+    norm.presetId = s.presetId;
+    return norm;
   } catch { return null; }
 }
 
@@ -1219,7 +1267,7 @@ function applyWorkState(state) {
   const scaleSel = document.getElementById('ctrl-scale');
   const rootSel = document.getElementById('ctrl-root');
   if (scaleSel && state.scale) scaleSel.value = state.scale;
-  if (rootSel && state.root) { ensureRootOption(state.root); rootSel.value = state.root; }
+  if (rootSel && state.root) rootSel.value = state.root;
   if (state.scale && state.root) retune(state.root, state.scale);
   // Define o preset real de referência; refreshModifiedIndicator (chamado no
   // load) decide se mostra "✎ Não salvo" caso o estado restaurado divirja.
@@ -1251,22 +1299,7 @@ function populateScaleControls() {
     });
   }
   if (scaleSel) scaleSel.value = currentScaleId;
-  if (rootSel) ensureRootOption(currentRoot), (rootSel.value = currentRoot);
-}
-
-// Garante que o <select> de nota base tenha a opção pedida. Se uma vibe trouxe
-// um root fora da lista segura (ex.: 'C5' de uma versão antiga), adiciona a
-// opção para o select nunca ficar vazio/dessincronizado.
-function ensureRootOption(root) {
-  const rootSel = document.getElementById('ctrl-root');
-  if (!rootSel || !root) return;
-  const exists = Array.from(rootSel.options).some(o => o.value === root);
-  if (!exists) {
-    const opt = document.createElement('option');
-    opt.value = root;
-    opt.textContent = root;
-    rootSel.appendChild(opt);
-  }
+  if (rootSel) rootSel.value = currentRoot;
 }
 
 // Compartilha as mesmas notas entre teclado físico e superfícies de toque.
