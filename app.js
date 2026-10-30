@@ -497,6 +497,9 @@ let isStarted = false;
 let isStarting = false;
 let harp, chorus, inputGain, masterGain, pwmLfo;
 const VOLUME_KEY = 'laser-harp-master-volume-v1';
+const USER_PRESETS_KEY = 'laser-harp-user-presets-v1';
+const VIBE_VERSION = 1;
+let userPresets = loadUserPresets(); // vibes do usuário (localStorage)
 function loadVolume() {
   try {
     const raw = localStorage.getItem(VOLUME_KEY);
@@ -522,7 +525,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29p';
+const JS_VERSION = '2026-10-29q';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -594,7 +597,26 @@ document.getElementById('ctrl-root').addEventListener('change', (e) => {
 });
 document.getElementById('ctrl-preset').addEventListener('change', (e) => {
   applyPreset(e.target.value);
+  updateDeleteButton();
   e.target.blur(); // devolve o foco ao teclado
+});
+document.getElementById('save-vibe').addEventListener('click', () => {
+  const input = document.getElementById('vibe-name');
+  saveCurrentVibe(input.value);
+  input.value = '';
+});
+document.getElementById('vibe-name').addEventListener('keydown', (e) => {
+  // Enter salva; e não deixa a tecla vazar como nota (é um campo de texto).
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const input = e.target;
+    saveCurrentVibe(input.value);
+    input.value = '';
+    input.blur();
+  }
+});
+document.getElementById('delete-vibe').addEventListener('click', () => {
+  deleteSelectedVibe();
 });
 document.getElementById('ctrl-wave1').addEventListener('change', (e) => {
   harp?.setWaveform('osc1', e.target.value);
@@ -773,7 +795,50 @@ const PRESET_SLIDER = {
   sustain: 'ctrl-sustain', release: 'ctrl-release'
 };
 
+// ---------------------------------------------------------------------------
+// VIBES DO USUÁRIO (localStorage). Mesma estrutura dos presets de fábrica,
+// guardadas numa lista versionada. Import/export de arquivo fica para a
+// próxima rodada (vai reusar este mesmo formato).
+// (USER_PRESETS_KEY, VIBE_VERSION e userPresets ficam no bloco de globais, no
+//  topo, para já existirem quando o setup chama populatePresetControl.)
+// ---------------------------------------------------------------------------
+function loadUserPresets() {
+  try {
+    const raw = localStorage.getItem(USER_PRESETS_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+function saveUserPresets(list) {
+  try { localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(list)); }
+  catch { /* armazenamento indisponível */ }
+}
+
+// Lê o ESTADO ATUAL dos controles como um objeto de vibe (mesmos campos dos
+// presets de fábrica). É o que vira uma "vibe do usuário" ao salvar.
+function readCurrentVibe() {
+  const num = (id) => parseFloat(document.getElementById(id).value);
+  const val = (id) => document.getElementById(id).value;
+  const vibe = { version: VIBE_VERSION };
+  for (const [field, sliderId] of Object.entries(PRESET_SLIDER)) {
+    vibe[field] = num(sliderId);
+  }
+  vibe.wave1 = val('ctrl-wave1');
+  vibe.wave2 = val('ctrl-wave2');
+  vibe.scale = val('ctrl-scale');
+  vibe.root = val('ctrl-root');
+  return vibe;
+}
+
+// Busca um preset por id em ambas as listas (fábrica e usuário). Ids de
+// usuário têm o prefixo 'user:'.
 function presetById(id) {
+  if (id && id.startsWith('user:')) {
+    const i = Number(id.slice(5));
+    if (userPresets[i]) return userPresets[i];
+  }
   return FACTORY_PRESETS.find(p => p.id === id) || FACTORY_PRESETS[0];
 }
 
@@ -805,17 +870,69 @@ function applyPreset(id) {
   if (presetSel) presetSel.value = id;
 }
 
-// Popula o seletor de presets de fábrica.
-function populatePresetControl() {
+// (Re)popula o seletor com presets de fábrica + vibes do usuário na MESMA
+// lista. As do usuário levam id 'user:N' e um ★ no rótulo. keepId tenta manter
+// a seleção atual após reconstruir (ex.: depois de salvar/apagar).
+function populatePresetControl(keepId) {
   const sel = document.getElementById('ctrl-preset');
-  if (!sel || sel.options.length) return;
+  if (!sel) return;
+  const previous = keepId || sel.value || DEFAULT_PRESET_ID;
+  sel.innerHTML = '';
+
+  const factoryGroup = document.createElement('optgroup');
+  factoryGroup.label = 'De fábrica';
   FACTORY_PRESETS.forEach((p) => {
     const opt = document.createElement('option');
     opt.value = p.id;
     opt.textContent = p.label;
-    sel.appendChild(opt);
+    factoryGroup.appendChild(opt);
   });
-  sel.value = DEFAULT_PRESET_ID;
+  sel.appendChild(factoryGroup);
+
+  if (userPresets.length) {
+    const userGroup = document.createElement('optgroup');
+    userGroup.label = 'Minhas vibes';
+    userPresets.forEach((p, i) => {
+      const opt = document.createElement('option');
+      opt.value = `user:${i}`;
+      opt.textContent = `★ ${p.name || p.label || 'Vibe ' + (i + 1)}`;
+      userGroup.appendChild(opt);
+    });
+    sel.appendChild(userGroup);
+  }
+
+  // Restaura a seleção se ainda existir; senão cai no default.
+  sel.value = previous;
+  if (!sel.value) sel.value = DEFAULT_PRESET_ID;
+  updateDeleteButton();
+}
+
+// Mostra o botão Apagar só quando uma vibe do USUÁRIO está selecionada.
+function updateDeleteButton() {
+  const sel = document.getElementById('ctrl-preset');
+  const btn = document.getElementById('delete-vibe');
+  if (!sel || !btn) return;
+  btn.style.display = sel.value.startsWith('user:') ? '' : 'none';
+}
+
+// Salva a vibe atual na lista do usuário (localStorage) e seleciona-a.
+function saveCurrentVibe(name) {
+  const vibe = readCurrentVibe();
+  vibe.name = name.trim() || `Vibe ${userPresets.length + 1}`;
+  userPresets.push(vibe);
+  saveUserPresets(userPresets);
+  populatePresetControl(`user:${userPresets.length - 1}`);
+}
+
+// Apaga a vibe do usuário atualmente selecionada.
+function deleteSelectedVibe() {
+  const sel = document.getElementById('ctrl-preset');
+  if (!sel || !sel.value.startsWith('user:')) return;
+  const i = Number(sel.value.slice(5));
+  if (!userPresets[i]) return;
+  userPresets.splice(i, 1);
+  saveUserPresets(userPresets);
+  populatePresetControl(DEFAULT_PRESET_ID);
 }
 
 // Popula os <select> de escala e nota base e marca os valores atuais.

@@ -6,7 +6,7 @@
   <meta name="author" content="Mauricio Jabur — MauMaker">
   <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
   <meta name="generator" content="Kiro">
-  <meta name="html-version" content="2026-10-29p">
+  <meta name="html-version" content="2026-10-29q">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -143,6 +143,37 @@
       min-height: 1.2em; /* reserva 1 linha: trocar o texto não muda a altura */
     }
     .preset-picker label { font-size: 0.95rem; font-weight: bold; margin-bottom: 4px; }
+    .vibe-save {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .vibe-save input[type=text] {
+      flex: 1 1 180px;
+      min-width: 0;
+      box-sizing: border-box;
+      background: #0d0f12;
+      color: #00ffcc;
+      border: 1px solid #00ffcc;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+    .vibe-save input[type=text]::placeholder { color: #4a6b63; }
+    .vibe-save button {
+      background: #0d0f12;
+      color: #00ffcc;
+      border: 1px solid #00ffcc;
+      border-radius: 4px;
+      padding: 8px 14px;
+      font-family: monospace;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .vibe-save button:hover { background: #15181e; }
+    #delete-vibe { border-color: #ff9292; color: #ff9292; }
     .preset-picker select {
       width: 100%;
       box-sizing: border-box;
@@ -201,9 +232,15 @@
     <input type="range" id="ctrl-volume" min="0" max="200" step="5" value="170" style="width:100%;accent-color:#00ffcc;cursor:pointer" aria-label="Volume geral">
   </div>
 
-  <div class="control-group preset-picker" style="width:100%;max-width:800px;margin:0 0 16px">
+  <div class="control-group preset-picker" style="width:100%;max-width:800px;margin:0 0 10px">
     <label for="ctrl-preset" style="color:#00ffcc">Preset (vibe)</label>
     <select id="ctrl-preset" aria-label="Preset de sintetizador"></select>
+  </div>
+
+  <div class="vibe-save" style="width:100%;max-width:800px;margin:0 0 16px">
+    <input type="text" id="vibe-name" placeholder="Nome da sua vibe" aria-label="Nome da vibe" maxlength="40">
+    <button type="button" id="save-vibe">Salvar vibe</button>
+    <button type="button" id="delete-vibe" style="display:none">Apagar</button>
   </div>
 
   <details id="controls-details" style="width:100%;max-width:980px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
@@ -317,6 +354,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29p" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29q" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
