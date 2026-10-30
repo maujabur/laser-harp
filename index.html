@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="html-version" content="2026-10-29k">
+  <meta name="author" content="Mauricio Jabur — MauMaker">
+  <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
+  <meta name="generator" content="Kiro">
+  <meta name="html-version" content="2026-10-29l">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -139,6 +142,18 @@
       text-align: center;
       min-height: 1.2em; /* reserva 1 linha: trocar o texto não muda a altura */
     }
+    .credits {
+      margin-top: 26px;
+      color: #4a6b63;
+      font-size: 0.8rem;
+      text-align: center;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+    }
+    .credits strong { color: #00ffcc; font-weight: bold; }
+    .credits .sep { opacity: 0.6; }
     .keys-container { width: 100%; touch-action: none; }
     @media (min-width: 900px) {
       .keys-container { max-width: 1280px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
@@ -249,12 +264,18 @@
   </div>
   <div class="keys-container" id="keyboard"></div>
 
+  <footer class="credits">
+    <span>Harpa Laser por <strong>Mauricio Jabur — MauMaker</strong></span>
+    <span class="sep">·</span>
+    <span>Built with <strong>Kiro</strong></span>
+  </footer>
+
   <script>
     window.addEventListener('error', function (event) {
       const el = document.getElementById('audio-status');
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29k" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29l" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
