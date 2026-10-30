@@ -407,7 +407,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29f';
+const JS_VERSION = '2026-10-29g';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -475,6 +475,7 @@ KEY_MAP.forEach((data, index) => {
 // não dependem do áudio estar ativo, então ligamos a troca já aqui (retune só
 // toca no harp quando ele existe).
 populateScaleControls();
+bindControls(); // painel sempre visível; handlers seguros antes do áudio
 document.getElementById('ctrl-scale').addEventListener('change', (e) => {
   retune(currentRoot, e.target.value);
   e.target.blur(); // devolve o foco para o teclado tocar notas em seguida
@@ -527,16 +528,19 @@ async function initAudio() {
   // Instrumento dual-oscilador (modelagem Preset 46 Synthex).
   harp = new LaserHarp(inputGain, pwmLfo, 12);
 
-  document.getElementById('controls').style.display = 'grid';
-  document.getElementById('controls-details').style.display = 'block';
   isStarted = true;
   isStarting = false;
   setAudioStatus('Áudio ativo — toque nas notas');
   audioButton.style.display = 'none';
 
-  bindControls();
+  // Honra ajustes feitos nos sliders antes de o áudio estar ligado.
+  applyControlValues();
 }
 
+// Liga os controles do sintetizador. Pode ser chamado ANTES do áudio existir:
+// cada handler sempre atualiza o rótulo, mas só toca no grafo de áudio se ele
+// já existe (harp/chorus). Ao ativar o áudio, applyControlValues() aplica os
+// valores atuais dos sliders de uma vez.
 function bindControls() {
   document.getElementById('ctrl-volume').addEventListener('input', (e) => {
     setMasterVolume(Number(e.target.value));
@@ -545,7 +549,7 @@ function bindControls() {
   document.getElementById('ctrl-glide').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     document.getElementById('val-glide').innerText = val;
-    harp.setPortamento(val / 1000);
+    harp?.setPortamento(val / 1000);
   });
 
   // Filtro (× nota) — key tracking: cutoff = fator × frequência da nota.
@@ -553,42 +557,42 @@ function bindControls() {
   document.getElementById('ctrl-cutoff').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-cutoff').innerText = `${val.toFixed(1)}×`;
-    harp.setFilterKeyTrack(val);
+    harp?.setFilterKeyTrack(val);
   });
 
   // Ressonância (Q) — aplicada a todas as vozes.
   document.getElementById('ctrl-res').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-res').innerText = val;
-    harp.setFilterQ(val);
+    harp?.setFilterQ(val);
   });
 
   // Chorus
   document.getElementById('ctrl-chorus').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-chorus').innerText = `${Math.round(val * 100)}%`;
-    chorus.wet.rampTo(val, 0.05);
+    if (chorus) chorus.wet.rampTo(val, 0.05);
   });
 
   // Sweep OSC2 — intensidade do "poinnn" (vale da próxima nota em diante)
   document.getElementById('ctrl-sweep').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-sweep').innerText = val;
-    harp.setSweepSemitones(val);
+    harp?.setSweepSemitones(val);
   });
 
   // Sweep OSC2 — tempo do "poinnn" (ms -> segundos)
   document.getElementById('ctrl-sweeptime').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     document.getElementById('val-sweeptime').innerText = val;
-    harp.setSweepTime(val / 1000);
+    harp?.setSweepTime(val / 1000);
   });
 
   // Mix OSC2 — presença do segundo oscilador
   document.getElementById('ctrl-osc2').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-osc2').innerText = `${Math.round(val * 100)}%`;
-    harp.setOsc2Level(val);
+    harp?.setOsc2Level(val);
   });
 
   // Envelope ADSR (AmplitudeEnvelope de cada voz). Vale da próxima nota.
@@ -596,30 +600,46 @@ function bindControls() {
   document.getElementById('ctrl-attack').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     document.getElementById('val-attack').innerText = val;
-    harp.setEnvelope('attack', val / 1000);
+    harp?.setEnvelope('attack', val / 1000);
   });
 
   // Decay (ms -> s)
   document.getElementById('ctrl-decay').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     document.getElementById('val-decay').innerText = val;
-    harp.setEnvelope('decay', val / 1000);
+    harp?.setEnvelope('decay', val / 1000);
   });
 
   // Sustain (0 a 1)
   document.getElementById('ctrl-sustain').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-sustain').innerText = `${Math.round(val * 100)}%`;
-    harp.setEnvelope('sustain', val);
+    harp?.setEnvelope('sustain', val);
   });
 
   // Release (ms -> s)
   document.getElementById('ctrl-release').addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
     document.getElementById('val-release').innerText = val;
-    harp.setEnvelope('release', val / 1000);
+    harp?.setEnvelope('release', val / 1000);
   });
+}
 
+// Aplica ao grafo de áudio os valores ATUAIS de todos os sliders. Chamado ao
+// ativar o áudio, para honrar ajustes feitos antes de ligar.
+function applyControlValues() {
+  const num = (id) => parseFloat(document.getElementById(id).value);
+  harp.setPortamento(num('ctrl-glide') / 1000);
+  harp.setFilterKeyTrack(num('ctrl-cutoff'));
+  harp.setFilterQ(num('ctrl-res'));
+  chorus.wet.rampTo(num('ctrl-chorus'), 0.05);
+  harp.setSweepSemitones(num('ctrl-sweep'));
+  harp.setSweepTime(num('ctrl-sweeptime') / 1000);
+  harp.setOsc2Level(num('ctrl-osc2'));
+  harp.setEnvelope('attack', num('ctrl-attack') / 1000);
+  harp.setEnvelope('decay', num('ctrl-decay') / 1000);
+  harp.setEnvelope('sustain', num('ctrl-sustain'));
+  harp.setEnvelope('release', num('ctrl-release') / 1000);
 }
 
 // Popula os <select> de escala e nota base e marca os valores atuais.

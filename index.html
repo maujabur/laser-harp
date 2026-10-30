@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="html-version" content="2026-10-29f">
+  <meta name="html-version" content="2026-10-29g">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -32,7 +32,7 @@
       margin-bottom: 20px;
     }
     .controls-panel {
-      display: none;
+      display: grid;
       grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 15px 24px;
       width: 100%;
@@ -172,7 +172,7 @@
     <input type="range" id="ctrl-volume" min="0" max="200" step="5" value="170" style="width:100%;accent-color:#00ffcc;cursor:pointer" aria-label="Volume geral">
   </div>
 
-  <details id="controls-details" style="display:none;width:100%;max-width:980px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
+  <details id="controls-details" style="width:100%;max-width:980px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
     <div class="control-group">
       <label for="ctrl-scale">Escala</label>
       <select id="ctrl-scale" aria-label="Escala"></select>
@@ -255,6 +255,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29f" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29g" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
