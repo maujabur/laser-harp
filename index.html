@@ -6,7 +6,7 @@
   <meta name="author" content="Mauricio Jabur — MauMaker">
   <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
   <meta name="generator" content="Kiro">
-  <meta name="html-version" content="2026-10-29l">
+  <meta name="html-version" content="2026-10-29m">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -142,6 +142,20 @@
       text-align: center;
       min-height: 1.2em; /* reserva 1 linha: trocar o texto não muda a altura */
     }
+    .preset-picker label { font-size: 0.95rem; font-weight: bold; margin-bottom: 4px; }
+    .preset-picker select {
+      width: 100%;
+      box-sizing: border-box;
+      background: #0d0f12;
+      color: #00ffcc;
+      border: 1px solid #00ffcc;
+      border-radius: 4px;
+      padding: 10px 10px;
+      font-family: monospace;
+      font-size: 1rem;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0, 255, 204, 0.15);
+    }
     .credits {
       margin-top: 26px;
       color: #4a6b63;
@@ -185,6 +199,11 @@
   <div class="control-group" style="width:100%;max-width:800px;margin:0 0 14px">
     <label for="ctrl-volume" style="color:#00ffcc;display:flex;justify-content:space-between">Volume geral (↑ / ↓): <span id="val-volume">170%</span></label>
     <input type="range" id="ctrl-volume" min="0" max="200" step="5" value="170" style="width:100%;accent-color:#00ffcc;cursor:pointer" aria-label="Volume geral">
+  </div>
+
+  <div class="control-group preset-picker" style="width:100%;max-width:800px;margin:0 0 16px">
+    <label for="ctrl-preset" style="color:#00ffcc">Preset (vibe)</label>
+    <select id="ctrl-preset" aria-label="Preset de sintetizador"></select>
   </div>
 
   <details id="controls-details" style="width:100%;max-width:980px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
@@ -276,6 +295,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29l" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29m" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>

@@ -157,6 +157,49 @@ const PRESET = {
 };
 
 // ---------------------------------------------------------------------------
+// PRESETS DE FÁBRICA ("vibes"). Cada um guarda a experiência toda: timbre +
+// afinação (escala e nota base). O volume fica de fora (é do ambiente/PA).
+// Os valores estão nas MESMAS unidades dos sliders (ms, fator ×nota, %, etc.),
+// então aplicar um preset é só setar cada controle e reaproveitar os handlers.
+// Campos por preset:
+//   glide(ms) cutoff(×nota) res(Q) chorus(0-1) sweep(semi) sweeptime(ms)
+//   osc2(0-1) attack(ms) decay(ms) sustain(0-1) release(ms) scale root
+// ---------------------------------------------------------------------------
+const FACTORY_PRESETS = [
+  {
+    id: 'harpa-classica', label: 'Harpa Clássica',
+    glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, sweep: 1, sweeptime: 40,
+    osc2: 0.26, attack: 10, decay: 400, sustain: 0.55, release: 500,
+    scale: 'penta-menor', root: 'C2'
+  },
+  {
+    id: 'pad-etereo', label: 'Pad Etéreo',
+    glide: 120, cutoff: 2.5, res: 1.5, chorus: 0.35, sweep: 0.5, sweeptime: 80,
+    osc2: 0.4, attack: 600, decay: 800, sustain: 0.8, release: 1800,
+    scale: 'penta-maior', root: 'C2'
+  },
+  {
+    id: 'pluck-curto', label: 'Pluck Curto',
+    glide: 10, cutoff: 5.5, res: 2.5, chorus: 0.08, sweep: 2, sweeptime: 30,
+    osc2: 0.3, attack: 3, decay: 220, sustain: 0.0, release: 180,
+    scale: 'penta-menor', root: 'D2'
+  },
+  {
+    id: 'drone-profundo', label: 'Drone Profundo',
+    glide: 90, cutoff: 2.0, res: 4.5, chorus: 0.2, sweep: 1, sweeptime: 60,
+    osc2: 0.5, attack: 200, decay: 600, sustain: 0.9, release: 1400,
+    scale: 'penta-menor', root: 'G1'
+  },
+  {
+    id: 'sino-cristalino', label: 'Sino Cristalino',
+    glide: 15, cutoff: 7.0, res: 1.0, chorus: 0.12, sweep: 0.5, sweeptime: 40,
+    osc2: 0.35, attack: 4, decay: 900, sustain: 0.15, release: 700,
+    scale: 'penta-maior', root: 'G2'
+  }
+];
+const DEFAULT_PRESET_ID = 'harpa-classica';
+
+// ---------------------------------------------------------------------------
 // Voz dual-oscilador. Cada voz é alocada a uma nota enquanto ela soa.
 // ---------------------------------------------------------------------------
 class LaserVoice {
@@ -407,7 +450,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29l';
+const JS_VERSION = '2026-10-29m';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -467,6 +510,7 @@ KEY_MAP.forEach((data, index) => {
 // não dependem do áudio estar ativo, então ligamos a troca já aqui (retune só
 // toca no harp quando ele existe).
 populateScaleControls();
+populatePresetControl();
 bindControls(); // painel sempre visível; handlers seguros antes do áudio
 document.getElementById('ctrl-scale').addEventListener('change', (e) => {
   retune(currentRoot, e.target.value);
@@ -475,6 +519,10 @@ document.getElementById('ctrl-scale').addEventListener('change', (e) => {
 document.getElementById('ctrl-root').addEventListener('change', (e) => {
   retune(e.target.value, currentScaleId);
   e.target.blur();
+});
+document.getElementById('ctrl-preset').addEventListener('change', (e) => {
+  applyPreset(e.target.value);
+  e.target.blur(); // devolve o foco ao teclado
 });
 
 // Inicialização do Áudio.
@@ -632,6 +680,53 @@ function applyControlValues() {
   harp.setEnvelope('decay', num('ctrl-decay') / 1000);
   harp.setEnvelope('sustain', num('ctrl-sustain'));
   harp.setEnvelope('release', num('ctrl-release') / 1000);
+}
+
+// Mapa id-do-preset -> campo -> id-do-slider. Centraliza a correspondência.
+const PRESET_SLIDER = {
+  glide: 'ctrl-glide', cutoff: 'ctrl-cutoff', res: 'ctrl-res',
+  chorus: 'ctrl-chorus', sweep: 'ctrl-sweep', sweeptime: 'ctrl-sweeptime',
+  osc2: 'ctrl-osc2', attack: 'ctrl-attack', decay: 'ctrl-decay',
+  sustain: 'ctrl-sustain', release: 'ctrl-release'
+};
+
+function presetById(id) {
+  return FACTORY_PRESETS.find(p => p.id === id) || FACTORY_PRESETS[0];
+}
+
+// Aplica um preset: seta cada slider e DISPARA 'input' para reusar os handlers
+// (rótulo + áudio), e reafina a escala/nota base. Também marca os selects.
+function applyPreset(id) {
+  const preset = presetById(id);
+  for (const [field, sliderId] of Object.entries(PRESET_SLIDER)) {
+    const el = document.getElementById(sliderId);
+    if (el && preset[field] !== undefined) {
+      el.value = String(preset[field]);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  // Escala + nota base (reafina as 12 teclas com segurança).
+  const scaleSel = document.getElementById('ctrl-scale');
+  const rootSel = document.getElementById('ctrl-root');
+  if (scaleSel) scaleSel.value = preset.scale;
+  if (rootSel) rootSel.value = preset.root;
+  retune(preset.root, preset.scale);
+  // Marca o preset atual no seletor.
+  const presetSel = document.getElementById('ctrl-preset');
+  if (presetSel) presetSel.value = id;
+}
+
+// Popula o seletor de presets de fábrica.
+function populatePresetControl() {
+  const sel = document.getElementById('ctrl-preset');
+  if (!sel || sel.options.length) return;
+  FACTORY_PRESETS.forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.label;
+    sel.appendChild(opt);
+  });
+  sel.value = DEFAULT_PRESET_ID;
 }
 
 // Popula os <select> de escala e nota base e marca os valores atuais.
