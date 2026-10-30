@@ -517,6 +517,8 @@ let harp, chorus, inputGain, masterGain, pwmLfo;
 const VOLUME_KEY = 'laser-harp-master-volume-v1';
 const USER_PRESETS_KEY = 'laser-harp-user-presets-v1';
 const WORKSTATE_KEY = 'laser-harp-workstate-v1'; // última config (save geral)
+// Versão do FORMATO da vibe (metadado, não som). Serve para migrar arquivos
+// antigos no futuro, se a estrutura mudar. Não entra na comparação de vibes.
 const VIBE_VERSION = 1;
 // Mapa campo-do-preset -> id-do-slider. No topo porque applyWorkState (no
 // setup) o usa antes de o código de presets aparecer no arquivo (const tem
@@ -558,7 +560,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29z';
+const JS_VERSION = '2026-10-29aa';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -1056,6 +1058,18 @@ function deleteSelectedVibe() {
 // IMPORT / EXPORT de arquivo (.harpa.json). Mesmo formato das vibes do usuário.
 // ---------------------------------------------------------------------------
 
+// Toast de feedback ao lado dos botões, com fade. Some sozinho após ~2.6s.
+let toastTimer = null;
+function showToast(message, isError = false) {
+  const el = document.getElementById('vibe-toast');
+  if (!el) return;
+  el.textContent = message;
+  el.classList.toggle('error', !!isError);
+  el.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
 // Campos que definem uma vibe (para comparar e migrar). Deriva do mapa de
 // sliders + os extras (ondas, escala, nota).
 const VIBE_FIELDS = [...Object.keys(PRESET_SLIDER), 'wave1', 'wave2', 'scale', 'root'];
@@ -1073,10 +1087,17 @@ function fixVibe(obj) {
 }
 
 // Duas vibes são "iguais" se nome + todos os campos batem.
+// Compara dois valores de campo: números como NÚMEROS (4 == 4.0), o resto como
+// texto. A 'version' NÃO entra (é só o formato do arquivo, não parte do som).
+function fieldsEqual(x, y) {
+  const nx = Number(x), ny = Number(y);
+  if (!Number.isNaN(nx) && !Number.isNaN(ny)) return nx === ny;
+  return String(x) === String(y);
+}
 function vibesAreEqual(a, b) {
   if (!a || !b) return false;
   if ((a.name || '') !== (b.name || '')) return false;
-  return VIBE_FIELDS.every(f => String(a[f]) === String(b[f]));
+  return VIBE_FIELDS.every(f => fieldsEqual(a[f], b[f]));
 }
 
 // Adiciona uma vibe à lista do usuário com a regra de duplicata combinada:
@@ -1119,34 +1140,32 @@ function exportCurrentVibe() {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(`Exportado: ${safe}.harpa.json`);
 }
 
 // Importa uma vibe de arquivo: lê, valida, migra, adiciona (regra de
-// duplicata) e seleciona. Feedback via audio-status.
+// duplicata) e seleciona. Feedback via toast (ao lado dos botões).
 function importVibeFile(file) {
   const fr = new FileReader();
   fr.onload = () => {
     let parsed;
     try { parsed = JSON.parse(fr.result); }
-    catch { setAudioStatus('Importar falhou: arquivo não é JSON válido', true); return; }
+    catch { showToast('Arquivo não é JSON válido', true); return; }
     if (!parsed || typeof parsed !== 'object') {
-      setAudioStatus('Importar falhou: conteúdo inválido', true); return;
+      showToast('Conteúdo inválido', true); return;
     }
     const vibe = fixVibe(parsed);
     const res = addUserVibe(vibe);
+    populatePresetControl(`user:${res.index}`);
+    applyPreset(`user:${res.index}`);
+    updateDeleteButton();
     if (res.status === 'duplicate') {
-      populatePresetControl(`user:${res.index}`);
-      applyPreset(`user:${res.index}`);
-      updateDeleteButton();
-      setAudioStatus(`"${vibe.name}" já existe — selecionada`);
+      showToast(`"${vibe.name}" já existe — selecionada`);
     } else {
-      populatePresetControl(`user:${res.index}`);
-      applyPreset(`user:${res.index}`);
-      updateDeleteButton();
-      setAudioStatus(`Vibe "${userPresets[res.index].name}" importada`);
+      showToast(`Vibe "${userPresets[res.index].name}" importada`);
     }
   };
-  fr.onerror = () => setAudioStatus('Importar falhou: erro ao ler o arquivo', true);
+  fr.onerror = () => showToast('Erro ao ler o arquivo', true);
   fr.readAsText(file);
 }
 

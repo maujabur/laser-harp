@@ -6,7 +6,7 @@
   <meta name="author" content="Mauricio Jabur — MauMaker">
   <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
   <meta name="generator" content="Kiro">
-  <meta name="html-version" content="2026-10-29z">
+  <meta name="html-version" content="2026-10-29aa">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -174,7 +174,7 @@
     }
     .vibe-save button:hover { background: #15181e; }
     #delete-vibe { border-color: #ff9292; color: #ff9292; }
-    .vibe-io { display: flex; flex-wrap: wrap; gap: 8px; }
+    .vibe-io { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .vibe-io button {
       background: #0d0f12;
       color: #00ffcc;
@@ -186,6 +186,16 @@
       cursor: pointer;
     }
     .vibe-io button:hover { background: #15181e; }
+    /* Toast de feedback ao lado dos botões: fade suave de entrada/saída. */
+    #vibe-toast {
+      font-size: 0.85rem;
+      color: #00ffcc;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      pointer-events: none;
+    }
+    #vibe-toast.show { opacity: 1; }
+    #vibe-toast.error { color: #ff9292; }
     .preset-picker select {
       width: 100%;
       box-sizing: border-box;
@@ -259,6 +269,7 @@
     <button type="button" id="export-vibe">Exportar arquivo</button>
     <button type="button" id="import-vibe">Importar arquivo</button>
     <input type="file" id="import-file" accept=".json,application/json" style="display:none">
+    <span id="vibe-toast" role="status" aria-live="polite"></span>
   </div>
 
   <details id="controls-details" style="width:100%;max-width:980px;margin-bottom:20px"><summary style="cursor:pointer;margin-bottom:10px">Ajustes do sintetizador</summary><div class="controls-panel" id="controls">
@@ -377,6 +388,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29z" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29aa" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
