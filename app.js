@@ -498,6 +498,7 @@ let isStarting = false;
 let harp, chorus, inputGain, masterGain, pwmLfo;
 const VOLUME_KEY = 'laser-harp-master-volume-v1';
 const USER_PRESETS_KEY = 'laser-harp-user-presets-v1';
+const WORKSTATE_KEY = 'laser-harp-workstate-v1'; // última config (save geral)
 const VIBE_VERSION = 1;
 let userPresets = loadUserPresets(); // vibes do usuário (localStorage)
 function loadVolume() {
@@ -525,7 +526,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29t';
+const JS_VERSION = '2026-10-29u';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -587,19 +588,41 @@ KEY_MAP.forEach((data, index) => {
 populateScaleControls();
 populatePresetControl();
 bindControls(); // painel sempre visível; handlers seguros antes do áudio
+
+// Save geral (Opção A): restaura a última configuração salva, se houver.
+// Assim o instrumento "acorda" como foi deixado. Sem estado salvo, segue com
+// os defaults do HTML/preset. Como dá para puxar qualquer preset de volta,
+// não há risco de ficar preso numa config bagunçada.
+const savedWorkState = loadWorkState();
+if (savedWorkState) {
+  applyWorkState(savedWorkState);
+  updateDeleteButton();
+}
 document.getElementById('ctrl-scale').addEventListener('change', (e) => {
   retune(currentRoot, e.target.value);
+  saveWorkState();
   e.target.blur(); // devolve o foco para o teclado tocar notas em seguida
 });
 document.getElementById('ctrl-root').addEventListener('change', (e) => {
   retune(e.target.value, currentScaleId);
+  saveWorkState();
   e.target.blur();
 });
 document.getElementById('ctrl-preset').addEventListener('change', (e) => {
   applyPreset(e.target.value);
   updateDeleteButton();
+  saveWorkState();
   e.target.blur(); // devolve o foco ao teclado
 });
+// Save geral: qualquer ajuste nos controles do painel (sliders, ondas) grava
+// o estado de trabalho. Um listener único cobre todos (delegação de evento).
+const controlsRoot = document.getElementById('controls');
+if (controlsRoot) {
+  controlsRoot.addEventListener('input', saveWorkState);
+  controlsRoot.addEventListener('change', saveWorkState);
+}
+// Volume também faz parte da config lembrada.
+document.getElementById('ctrl-volume').addEventListener('input', saveWorkState);
 document.getElementById('save-vibe').addEventListener('click', () => {
   const input = document.getElementById('vibe-name');
   saveCurrentVibe(input.value);
@@ -933,6 +956,57 @@ function deleteSelectedVibe() {
   userPresets.splice(i, 1);
   saveUserPresets(userPresets);
   populatePresetControl(DEFAULT_PRESET_ID);
+  saveWorkState();
+}
+
+// ---------------------------------------------------------------------------
+// SAVE GERAL (Opção A): lembra a última configuração de trabalho e restaura ao
+// abrir. Reaproveita readCurrentVibe() + o preset selecionado. Salvo com
+// debounce para não martelar o localStorage a cada pixel do slider.
+// ---------------------------------------------------------------------------
+let saveWorkTimer = null;
+function saveWorkState() {
+  if (saveWorkTimer) clearTimeout(saveWorkTimer);
+  saveWorkTimer = setTimeout(() => {
+    try {
+      const state = readCurrentVibe();
+      const presetSel = document.getElementById('ctrl-preset');
+      state.presetId = presetSel ? presetSel.value : DEFAULT_PRESET_ID;
+      localStorage.setItem(WORKSTATE_KEY, JSON.stringify(state));
+    } catch { /* armazenamento indisponível */ }
+  }, 250);
+}
+
+function loadWorkState() {
+  try {
+    const raw = localStorage.getItem(WORKSTATE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    return (s && typeof s === 'object') ? s : null;
+  } catch { return null; }
+}
+
+// Aplica um estado de trabalho salvo (os mesmos campos de uma vibe + presetId).
+// Seta os sliders/ondas/escala e marca o preset de onde ele veio.
+function applyWorkState(state) {
+  for (const [field, sliderId] of Object.entries(PRESET_SLIDER)) {
+    const el = document.getElementById(sliderId);
+    if (el && state[field] !== undefined) {
+      el.value = String(state[field]);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  const wave1Sel = document.getElementById('ctrl-wave1');
+  const wave2Sel = document.getElementById('ctrl-wave2');
+  if (wave1Sel && state.wave1) { wave1Sel.value = state.wave1; harp?.setWaveform('osc1', state.wave1); }
+  if (wave2Sel && state.wave2) { wave2Sel.value = state.wave2; harp?.setWaveform('osc2', state.wave2); }
+  const scaleSel = document.getElementById('ctrl-scale');
+  const rootSel = document.getElementById('ctrl-root');
+  if (scaleSel && state.scale) scaleSel.value = state.scale;
+  if (rootSel && state.root) rootSel.value = state.root;
+  if (state.scale && state.root) retune(state.root, state.scale);
+  const presetSel = document.getElementById('ctrl-preset');
+  if (presetSel && state.presetId) presetSel.value = state.presetId;
 }
 
 // Popula os <select> de escala e nota base e marca os valores atuais.
