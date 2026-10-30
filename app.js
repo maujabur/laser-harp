@@ -182,7 +182,7 @@ const FACTORY_PRESETS = [
   {
     id: 'pad-etereo', label: 'Pad Etéreo',
     wave1: 'sawtooth', wave2: 'triangle',
-    glide: 120, cutoff: 2.5, res: 1.5, chorus: 0.35, sweep: 0.5, sweeptime: 80,
+    glide: 120, cutoff: 3.2, res: 1.5, chorus: 0.35, sweep: 0.5, sweeptime: 80,
     osc2: 0.4, attack: 600, decay: 800, sustain: 0.8, release: 1800,
     scale: 'penta-maior', root: 'C2'
   },
@@ -196,7 +196,7 @@ const FACTORY_PRESETS = [
   {
     id: 'drone-profundo', label: 'Drone Profundo',
     wave1: 'sawtooth', wave2: 'sawtooth',
-    glide: 90, cutoff: 2.0, res: 4.5, chorus: 0.2, sweep: 1, sweeptime: 60,
+    glide: 90, cutoff: 3.2, res: 4.5, chorus: 0.2, sweep: 1, sweeptime: 60,
     osc2: 0.5, attack: 200, decay: 600, sustain: 0.9, release: 1400,
     scale: 'penta-menor', root: 'G1'
   },
@@ -522,7 +522,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29o';
+const JS_VERSION = '2026-10-29p';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
