@@ -360,14 +360,19 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 scale-fixes';
+// Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
+// se o celular estiver com HTML em cache antigo, dê para ver os dois números
+// e diagnosticar o que o GitHub Pages já propagou.
+const JS_VERSION = '2026-10-29c';
+const HTML_VERSION =
+  document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
   audioStatus.style.color = error ? '#ff9292' : '#00ffcc';
 }
-audioButton.addEventListener('click', () => { setAudioStatus('Botão acionado — iniciando áudio…'); ensureAudio().catch(() => {}); });
-setAudioStatus(`JavaScript carregado (${APP_VERSION}) — toque em Ativar áudio`);
+audioButton.addEventListener('click', () => { setAudioStatus('Botão acionado — iniciando áudio…'); unlockAudio(); ensureAudio().catch(() => {}); });
+setAudioStatus(`HTML v${HTML_VERSION} · JS v${JS_VERSION} — toque em Ativar áudio`);
 
 
 setMasterVolume(masterVolume);
@@ -386,13 +391,23 @@ KEY_MAP.forEach((data, index) => {
   el.setAttribute('aria-label', `Tocar nota ${data.note}`);
   el.addEventListener('pointerdown', async (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // Desbloqueia o AudioContext SÍNCRONO dentro do gesto, ANTES de qualquer
+    // preventDefault/setPointerCapture — no Chrome mobile essas chamadas
+    // podem invalidar o gesto e deixar o Tone.start() pendurado.
+    const unlocking = unlockAudio();
     e.preventDefault();
-    el.setPointerCapture(e.pointerId);
+    // setPointerCapture é frequentemente cancelado no mobile; se falhar,
+    // seguimos em frente (o pointerup/cancel global ainda solta a nota).
+    try { el.setPointerCapture(e.pointerId); } catch { /* mobile: ok ignorar */ }
     activePointers.set(e.pointerId, index);
     try {
+      await unlocking;
       await ensureAudio();
       if (activePointers.get(e.pointerId) === index) updateNote(index);
-    } catch (error) { console.error('Falha ao iniciar áudio:', error); }
+    } catch (error) {
+      console.error('Falha ao iniciar áudio:', error);
+      setAudioStatus(`Falha no áudio: ${error?.message || String(error)} — use o botão Ativar áudio`, true);
+    }
   });
   const releasePointer = (e) => {
     if (!activePointers.has(e.pointerId)) return;
@@ -428,7 +443,7 @@ async function initAudio() {
   if (isStarted) return;
   isStarting = true;
   setAudioStatus('Inicializando áudio…');
-  await Tone.start();
+  await unlockAudio(); // garante o contexto resumido antes de montar o grafo
   Tone.context.latencyHint = 'interactive';
 
   // Volume de saída independente da atenuação protetora de -12 dB.
@@ -619,6 +634,19 @@ function retune(rootNote = currentRoot, scaleId = currentScaleId) {
   applyScale(rootNote, scaleId);
 }
 
+// Desbloqueia o AudioContext (Tone.start) de forma idempotente. Deve ser
+// chamado SÍNCRONO dentro de um gesto do usuário. Separado de ensureAudio
+// para que o resume do contexto não dependa da construção do grafo.
+let unlockPromise = null;
+function unlockAudio() {
+  if (unlockPromise) return unlockPromise;
+  unlockPromise = Tone.start().catch((error) => {
+    unlockPromise = null; // permite nova tentativa no próximo gesto
+    throw error;
+  });
+  return unlockPromise;
+}
+
 function ensureAudio() {
   if (isStarted) return Promise.resolve();
   if (!audioInitPromise) {
@@ -653,12 +681,17 @@ window.addEventListener('keydown', async (e) => {
   if (typingInField()) return;
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
+  const unlocking = unlockAudio(); // síncrono dentro do gesto
   e.preventDefault();
   activeKeys.add(index);
   try {
+    await unlocking;
     await ensureAudio();
     if (activeKeys.has(index)) updateNote(index);
-  } catch (error) { console.error('Falha ao iniciar áudio:', error); }
+  } catch (error) {
+    console.error('Falha ao iniciar áudio:', error);
+    setAudioStatus(`Falha no áudio: ${error?.message || String(error)} — use o botão Ativar áudio`, true);
+  }
 });
 
 window.addEventListener('keyup', (e) => {
