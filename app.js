@@ -560,7 +560,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29aa';
+const JS_VERSION = '2026-10-29ab';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -907,8 +907,11 @@ function readCurrentVibe() {
   }
   vibe.wave1 = val('ctrl-wave1');
   vibe.wave2 = val('ctrl-wave2');
-  vibe.scale = val('ctrl-scale');
-  vibe.root = val('ctrl-root');
+  // Escala e nota base vêm do ESTADO real (currentScaleId/currentRoot), não do
+  // .value do select — que pode ficar vazio se uma vibe trouxe um root fora da
+  // lista de opções. Isso evita salvar root:"" e gerar duplicatas infinitas.
+  vibe.scale = currentScaleId;
+  vibe.root = currentRoot;
   return vibe;
 }
 
@@ -943,7 +946,7 @@ function applyPreset(id) {
   const scaleSel = document.getElementById('ctrl-scale');
   const rootSel = document.getElementById('ctrl-root');
   if (scaleSel) scaleSel.value = preset.scale;
-  if (rootSel) rootSel.value = preset.root;
+  if (rootSel) { ensureRootOption(preset.root); rootSel.value = preset.root; }
   retune(preset.root, preset.scale);
   // Aplicar um preset DESCARTA as alterações: vira o preset selecionado,
   // esconde a entrada "✎ Não salvo" e marca o seletor no preset real.
@@ -1080,7 +1083,9 @@ function fixVibe(obj) {
   const base = presetById(DEFAULT_PRESET_ID);
   const vibe = { version: VIBE_VERSION };
   for (const f of VIBE_FIELDS) {
-    vibe[f] = (obj && obj[f] !== undefined) ? obj[f] : base[f];
+    const v = obj ? obj[f] : undefined;
+    // undefined OU string vazia caem no default (evita root:"" / scale:"").
+    vibe[f] = (v !== undefined && v !== '') ? v : base[f];
   }
   vibe.name = (obj && typeof obj.name === 'string' && obj.name.trim()) ? obj.name.trim() : 'Vibe importada';
   return vibe;
@@ -1214,7 +1219,7 @@ function applyWorkState(state) {
   const scaleSel = document.getElementById('ctrl-scale');
   const rootSel = document.getElementById('ctrl-root');
   if (scaleSel && state.scale) scaleSel.value = state.scale;
-  if (rootSel && state.root) rootSel.value = state.root;
+  if (rootSel && state.root) { ensureRootOption(state.root); rootSel.value = state.root; }
   if (state.scale && state.root) retune(state.root, state.scale);
   // Define o preset real de referência; refreshModifiedIndicator (chamado no
   // load) decide se mostra "✎ Não salvo" caso o estado restaurado divirja.
@@ -1246,7 +1251,22 @@ function populateScaleControls() {
     });
   }
   if (scaleSel) scaleSel.value = currentScaleId;
-  if (rootSel) rootSel.value = currentRoot;
+  if (rootSel) ensureRootOption(currentRoot), (rootSel.value = currentRoot);
+}
+
+// Garante que o <select> de nota base tenha a opção pedida. Se uma vibe trouxe
+// um root fora da lista segura (ex.: 'C5' de uma versão antiga), adiciona a
+// opção para o select nunca ficar vazio/dessincronizado.
+function ensureRootOption(root) {
+  const rootSel = document.getElementById('ctrl-root');
+  if (!rootSel || !root) return;
+  const exists = Array.from(rootSel.options).some(o => o.value === root);
+  if (!exists) {
+    const opt = document.createElement('option');
+    opt.value = root;
+    opt.textContent = root;
+    rootSel.appendChild(opt);
+  }
 }
 
 // Compartilha as mesmas notas entre teclado físico e superfícies de toque.
