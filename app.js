@@ -560,7 +560,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29ac';
+const JS_VERSION = '2026-10-29ad';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -1165,10 +1165,13 @@ function addUserVibe(vibe) {
 // Exporta o ESTADO ATUAL como arquivo .harpa.json (download).
 function exportCurrentVibe() {
   const vibe = readCurrentVibe();
-  // Nome: o do preset/vibe selecionado, ou um nome genérico.
+  // Nome HONESTO: só usa o nome do preset se o estado NÃO está modificado
+  // (senão o som seria outro com o nome errado, como "Harpa Clássica" com
+  // parâmetros diferentes). Modificado -> nome genérico.
   const sel = document.getElementById('ctrl-preset');
   const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
-  vibe.name = (opt && opt.value !== UNSAVED_ID) ? opt.textContent.trim() : 'Minha vibe';
+  const atPreset = opt && opt.value !== UNSAVED_ID && !isStateModified();
+  vibe.name = atPreset ? opt.textContent.trim() : 'Minha vibe';
   const safe = vibe.name.replace(/[^\w\-]+/g, '-').replace(/^-+|-+$/g, '') || 'vibe';
   const blob = new Blob([JSON.stringify(vibe, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
