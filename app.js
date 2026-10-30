@@ -407,7 +407,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29i';
+const JS_VERSION = '2026-10-29j';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -421,8 +421,8 @@ function setAudioStatus(message, error = false) {
 const versionLine = document.getElementById('version-line');
 if (versionLine) versionLine.textContent = `HTML v${HTML_VERSION} · JS v${JS_VERSION}`;
 
-audioButton.addEventListener('click', () => { setAudioStatus('Botão acionado — iniciando áudio…'); unlockAudio(); ensureAudio().catch(() => {}); });
-setAudioStatus('Toque em Ativar áudio ou numa tecla');
+audioButton.addEventListener('click', () => { setAudioStatus('Iniciando áudio…'); ensureAudio().catch(() => {}); });
+setAudioStatus('Toque no botão ou numa tecla para ativar o áudio');
 
 
 setMasterVolume(masterVolume);
@@ -439,22 +439,16 @@ KEY_MAP.forEach((data, index) => {
   `;
   el.setAttribute('role', 'button');
   el.setAttribute('aria-label', `Tocar nota ${data.note}`);
-  el.addEventListener('pointerdown', async (e) => {
+  el.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    // O desbloqueio do áudio é tratado pelo listener GLOBAL (installGlobal-
-    // AudioUnlock), que roda sem preventDefault e é confiável no mobile. Aqui
-    // só registramos o toque e tocamos a nota quando o áudio estiver pronto.
     e.preventDefault();
-    // setPointerCapture é frequentemente cancelado no mobile; se falhar,
-    // seguimos em frente (o pointerup/cancel global ainda solta a nota).
+    // ESTADO "dormindo": o 1º toque SÓ ativa o áudio (destravamento), como o
+    // botão — não tenta tocar nota. O usuário toca de novo e aí sim soa.
+    if (!isStarted) { ensureAudio().catch(() => {}); return; }
+    // ESTADO "tocando": áudio ativo, toca a nota normalmente.
     try { el.setPointerCapture(e.pointerId); } catch { /* mobile: ok ignorar */ }
     activePointers.set(e.pointerId, index);
-    try {
-      await ensureAudio();
-      if (activePointers.get(e.pointerId) === index) updateNote(index);
-    } catch (error) {
-      console.error('Falha ao tocar nota:', error);
-    }
+    updateNote(index);
   });
   const releasePointer = (e) => {
     if (!activePointers.has(e.pointerId)) return;
@@ -491,7 +485,7 @@ async function initAudio() {
   if (isStarted) return;
   isStarting = true;
   setAudioStatus('Inicializando áudio…');
-  await unlockAudio(); // garante o contexto resumido antes de montar o grafo
+  await Tone.start(); // dentro do gesto do usuário (mecanismo que funcionava)
   Tone.context.latencyHint = 'interactive';
 
   // Volume de saída independente da atenuação protetora de -12 dB.
@@ -694,58 +688,16 @@ function retune(rootNote = currentRoot, scaleId = currentScaleId) {
   applyScale(rootNote, scaleId);
 }
 
-// Desbloqueia o AudioContext de forma idempotente e RESILIENTE. Deve rodar
-// dentro de um gesto do usuário. Chama Tone.start() (setup interno do Tone) e
-// também resume() direto no contexto bruto — no mobile, às vezes um resolve e
-// o outro não. Em caso de erro, reseta o estado para permitir nova tentativa
-// no próximo gesto (senão uma promise pendurada travava tudo, inclusive o
-// botão Ativar áudio).
-let unlockPromise = null;
-function unlockAudio() {
-  const ctx = Tone.getContext();
-  // Se já destravou, não repete.
-  if (ctx.state === 'running') return Promise.resolve();
-  if (unlockPromise) return unlockPromise;
-
-  const raw = ctx.rawContext;
-  // Dispara start/resume (não dependemos do quando a promise resolve — no
-  // mobile o primeiro start pode demorar vários segundos).
-  Tone.start().catch(() => {});
-  if (raw && raw.resume) raw.resume().catch(() => {});
-
-  // O sinal CONFIÁVEL de que destravou é o contexto virar 'running'. Ouvimos
-  // o statechange em vez de cronometrar o start — assim resolvemos no exato
-  // momento em que o áudio fica pronto, sem falso "timeout" quando o start
-  // normal simplesmente demora. O timeout longo é só rede contra travar eterno.
-  unlockPromise = new Promise((resolve, reject) => {
-    let done = false;
-    const finish = (ok, err) => {
-      if (done) return;
-      done = true;
-      if (raw && raw.removeEventListener) raw.removeEventListener('statechange', onChange);
-      clearInterval(poll);
-      clearTimeout(timer);
-      if (ok) resolve(); else { unlockPromise = null; reject(err); }
-    };
-    const check = () => { if (raw && raw.state === 'running') finish(true); };
-    const onChange = () => check();
-    if (raw && raw.addEventListener) raw.addEventListener('statechange', onChange);
-    // Alguns browsers não disparam statechange de forma confiável; completamos
-    // com um polling leve.
-    const poll = setInterval(check, 150);
-    const timer = setTimeout(
-      () => finish(false, new Error('timeout ao destravar áudio')), 10000);
-    check(); // caso já esteja running neste instante
-  });
-  return unlockPromise;
-}
-
+// Inicia o áudio (mesmo mecanismo simples do botão, que já funcionava no
+// mobile): Tone.start() direto dentro do gesto. Sem unlock global, sem
+// statechange, sem timeout — aquilo só regredia o caminho do botão.
+// Idempotente e tolerante a falha (permite nova tentativa no próximo gesto).
 function ensureAudio() {
   if (isStarted) return Promise.resolve();
   if (!audioInitPromise) {
     audioInitPromise = initAudio().catch(error => {
       isStarting = false;
-      audioInitPromise = null; // NUNCA deixa uma falha travar tentativas futuras
+      audioInitPromise = null; // permite nova tentativa num próximo gesto
       setAudioStatus(`Falha no áudio: ${error?.message || String(error)} — toque em Ativar áudio`, true);
       audioButton.textContent = 'Tentar ativar áudio novamente';
       audioButton.style.display = '';
@@ -754,23 +706,6 @@ function ensureAudio() {
   }
   return audioInitPromise;
 }
-
-// Desbloqueio GLOBAL e confiável: o primeiro gesto de qualquer tipo destrava o
-// áudio. Listeners sem preventDefault (para não invalidar o gesto no mobile) e
-// que se auto-removem quando o áudio inicia. Resolve o caso em que tocar uma
-// tecla antes do botão deixava o Tone.start() pendurado e travava tudo.
-function installGlobalAudioUnlock() {
-  const events = ['pointerdown', 'touchstart', 'touchend', 'mousedown', 'keydown'];
-  const remove = () => events.forEach((ev) => window.removeEventListener(ev, handler, true));
-  const handler = () => {
-    unlockAudio()
-      .then(() => ensureAudio())
-      .then(() => remove()) // áudio ligou: não precisamos mais destravar
-      .catch((error) => console.error('Unlock falhou (tentará no próximo gesto):', error));
-  };
-  events.forEach((ev) => window.addEventListener(ev, handler, { passive: true, capture: true }));
-}
-installGlobalAudioUnlock();
 
 // True quando o foco está num campo que CAPTURA teclas (select, campo de
 // texto, textarea). Sliders (input[type=range]) NÃO contam: a tecla "C" não
@@ -785,7 +720,7 @@ function typingInField() {
   return false;
 }
 
-window.addEventListener('keydown', async (e) => {
+window.addEventListener('keydown', (e) => {
   if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') &&
       !e.altKey && !e.ctrlKey && !e.metaKey && !typingInField()) {
     e.preventDefault();
@@ -799,15 +734,12 @@ window.addEventListener('keydown', async (e) => {
   if (typingInField()) return;
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
-  // Desbloqueio do áudio fica a cargo do listener global; aqui só tocamos.
   e.preventDefault();
+  // ESTADO "dormindo": 1ª tecla só ativa o áudio (não soa ainda).
+  if (!isStarted) { ensureAudio().catch(() => {}); return; }
+  // ESTADO "tocando": áudio ativo, toca a nota.
   activeKeys.add(index);
-  try {
-    await ensureAudio();
-    if (activeKeys.has(index)) updateNote(index);
-  } catch (error) {
-    console.error('Falha ao tocar nota:', error);
-  }
+  updateNote(index);
 });
 
 window.addEventListener('keyup', (e) => {
