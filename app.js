@@ -131,7 +131,13 @@ const PRESET = {
   osc1Level: 0.55,
   osc2Level: 0.26,
 
+  // Forma de onda de cada oscilador. 'pulse' mantém o PWM (width + LFO); as
+  // demais (sawtooth/square/triangle/sine) ignoram o width.
+  osc1Type: 'pulse',
+  osc2Type: 'pulse',
+
   // Largura de pulso base de cada oscilador (0 = onda quadrada pura).
+  // Só tem efeito quando o tipo é 'pulse'.
   osc1Width: 0.1,
   osc2Width: -0.2,
 
@@ -168,30 +174,35 @@ const PRESET = {
 const FACTORY_PRESETS = [
   {
     id: 'harpa-classica', label: 'Harpa Clássica',
+    wave1: 'pulse', wave2: 'pulse',
     glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, sweep: 1, sweeptime: 40,
     osc2: 0.26, attack: 10, decay: 400, sustain: 0.55, release: 500,
     scale: 'penta-menor', root: 'C2'
   },
   {
     id: 'pad-etereo', label: 'Pad Etéreo',
+    wave1: 'sawtooth', wave2: 'triangle',
     glide: 120, cutoff: 2.5, res: 1.5, chorus: 0.35, sweep: 0.5, sweeptime: 80,
     osc2: 0.4, attack: 600, decay: 800, sustain: 0.8, release: 1800,
     scale: 'penta-maior', root: 'C2'
   },
   {
     id: 'pluck-curto', label: 'Pluck Curto',
+    wave1: 'square', wave2: 'pulse',
     glide: 10, cutoff: 5.5, res: 2.5, chorus: 0.08, sweep: 2, sweeptime: 30,
     osc2: 0.3, attack: 3, decay: 220, sustain: 0.0, release: 180,
     scale: 'penta-menor', root: 'D2'
   },
   {
     id: 'drone-profundo', label: 'Drone Profundo',
+    wave1: 'sawtooth', wave2: 'sawtooth',
     glide: 90, cutoff: 2.0, res: 4.5, chorus: 0.2, sweep: 1, sweeptime: 60,
     osc2: 0.5, attack: 200, decay: 600, sustain: 0.9, release: 1400,
     scale: 'penta-menor', root: 'G1'
   },
   {
     id: 'sino-cristalino', label: 'Sino Cristalino',
+    wave1: 'sine', wave2: 'triangle',
     glide: 15, cutoff: 7.0, res: 1.0, chorus: 0.12, sweep: 0.5, sweeptime: 40,
     osc2: 0.35, attack: 4, decay: 900, sustain: 0.15, release: 700,
     scale: 'penta-maior', root: 'G2'
@@ -222,9 +233,15 @@ class LaserVoice {
     // Envelope de amplitude compartilhado -> filtro da voz.
     this.amp = new Tone.AmplitudeEnvelope(PRESET.envelope).connect(this.filter);
 
-    // OSC1: a fundamental (fica na nota tocada).
-    this.osc1 = new Tone.PulseOscillator({
+    // Guarda o LFO de PWM para (re)conectar só quando um oscilador é 'pulse'.
+    this.pwmLfo = pwmLfo;
+    this.pwmConnected = false;
+
+    // OSC1: a fundamental (fica na nota tocada). OmniOscillator permite trocar
+    // a forma de onda (sawtooth/square/triangle/sine/pulse) para dar caráter.
+    this.osc1 = new Tone.OmniOscillator({
       frequency: 440,
+      type: PRESET.osc1Type,
       width: PRESET.osc1Width
     });
     this.gain1 = new Tone.Gain(PRESET.osc1Level);
@@ -232,22 +249,21 @@ class LaserVoice {
     this.gain1.connect(this.amp);
 
     // OSC2: afinado bem acima, com pitch sweep no ataque (o "poinnn").
-    this.osc2 = new Tone.PulseOscillator({
+    this.osc2 = new Tone.OmniOscillator({
       frequency: 440,
+      type: PRESET.osc2Type,
       width: PRESET.osc2Width
     });
     this.gain2 = new Tone.Gain(PRESET.osc2Level);
     this.osc2.connect(this.gain2);
     this.gain2.connect(this.amp);
 
-    // LFO triangular (ÚNICO, compartilhado por todas as vozes) modulando a
-    // largura de pulso do OSC2. Todas as vozes "respiram" na mesma fase, o
-    // que troca 12 LFOs por 1 só — bem mais leve para o Pi, sem efeito
-    // colateral audível.
-    pwmLfo.connect(this.osc2.width);
-
     this.osc1.start();
     this.osc2.start();
+
+    // Conecta o LFO de PWM ao OSC2 só se ele for 'pulse' (as outras ondas não
+    // têm width). Todas as vozes compartilham o mesmo LFO (leve para o Pi).
+    this.updatePwm();
 
     // Parâmetros ajustáveis em tempo real (valem a partir da próxima nota).
     this.portamento = PRESET.portamento;
@@ -332,6 +348,34 @@ class LaserVoice {
   // Ajusta o ganho do OSC2 na mistura (0 a 1). Suave para evitar estalos.
   setOsc2Level(level) {
     this.gain2.gain.rampTo(level, 0.05);
+  }
+
+  // (Re)conecta o LFO de PWM ao width do OSC2 apenas quando ele tem width
+  // (ou seja, é 'pulse'). As outras ondas não têm width. Checamos a existência
+  // do Signal width em vez de confiar na string do tipo — mais robusto.
+  updatePwm() {
+    const w = this.osc2.width; // Signal só existe no modo pulse
+    if (w && !this.pwmConnected) {
+      try { this.pwmLfo.connect(w); this.pwmConnected = true; } catch { /* sem width */ }
+    } else if (!w && this.pwmConnected) {
+      this.pwmConnected = false; // width sumiu ao trocar de onda; nada a desconectar
+    }
+  }
+
+  // Troca a forma de onda de um oscilador ('osc1' ou 'osc2'). Reaplica width
+  // quando o novo tipo é 'pulse' e ajusta o PWM do OSC2.
+  setWaveform(which, type) {
+    const osc = which === 'osc2' ? this.osc2 : this.osc1;
+    if (which === 'osc2' && this.pwmConnected) {
+      // Desconecta o PWM antes de trocar (o width vai deixar de existir).
+      try { this.pwmLfo.disconnect(this.osc2.width); } catch { /* ok */ }
+      this.pwmConnected = false;
+    }
+    osc.type = type;
+    if (osc.width) {
+      osc.width.value = (which === 'osc2' ? PRESET.osc2Width : PRESET.osc1Width);
+    }
+    if (which === 'osc2') this.updatePwm();
   }
 
   // Fator de key tracking do filtro (vale da próxima nota em diante).
@@ -440,6 +484,10 @@ class LaserHarp {
     this.voices.forEach(v => v.setFilterQ(q));
   }
 
+  setWaveform(which, type) {
+    this.voices.forEach(v => v.setWaveform(which, type));
+  }
+
   setEnvelope(param, value) {
     this.voices.forEach(v => { v.amp[param] = value; });
   }
@@ -474,7 +522,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29n';
+const JS_VERSION = '2026-10-29o';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -547,6 +595,14 @@ document.getElementById('ctrl-root').addEventListener('change', (e) => {
 document.getElementById('ctrl-preset').addEventListener('change', (e) => {
   applyPreset(e.target.value);
   e.target.blur(); // devolve o foco ao teclado
+});
+document.getElementById('ctrl-wave1').addEventListener('change', (e) => {
+  harp?.setWaveform('osc1', e.target.value);
+  e.target.blur();
+});
+document.getElementById('ctrl-wave2').addEventListener('change', (e) => {
+  harp?.setWaveform('osc2', e.target.value);
+  e.target.blur();
 });
 
 // Inicialização do Áudio.
@@ -693,6 +749,9 @@ function bindControls() {
 // ativar o áudio, para honrar ajustes feitos antes de ligar.
 function applyControlValues() {
   const num = (id) => parseFloat(document.getElementById(id).value);
+  const val = (id) => document.getElementById(id).value;
+  harp.setWaveform('osc1', val('ctrl-wave1'));
+  harp.setWaveform('osc2', val('ctrl-wave2'));
   harp.setPortamento(num('ctrl-glide') / 1000);
   harp.setFilterKeyTrack(num('ctrl-cutoff'));
   harp.setFilterQ(num('ctrl-res'));
@@ -729,6 +788,12 @@ function applyPreset(id) {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     }
   }
+  // Formas de onda dos dois osciladores.
+  const wave1Sel = document.getElementById('ctrl-wave1');
+  const wave2Sel = document.getElementById('ctrl-wave2');
+  if (wave1Sel) { wave1Sel.value = preset.wave1; harp?.setWaveform('osc1', preset.wave1); }
+  if (wave2Sel) { wave2Sel.value = preset.wave2; harp?.setWaveform('osc2', preset.wave2); }
+
   // Escala + nota base (reafina as 12 teclas com segurança).
   const scaleSel = document.getElementById('ctrl-scale');
   const rootSel = document.getElementById('ctrl-root');
