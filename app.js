@@ -535,7 +535,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29v';
+const JS_VERSION = '2026-10-29w';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -607,30 +607,38 @@ if (savedWorkState) {
   applyWorkState(savedWorkState);
   updateDeleteButton();
 }
+refreshModifiedIndicator(); // honra o estado real (pode já vir modificado)
+// Chamado em qualquer mudança de estado: grava a config e atualiza o indicador
+// de "modificado" (●). Só o indicador é imediato; o save tem debounce próprio.
+function onStateChanged() {
+  saveWorkState();
+  refreshModifiedIndicator();
+}
 document.getElementById('ctrl-scale').addEventListener('change', (e) => {
   retune(currentRoot, e.target.value);
-  saveWorkState();
+  onStateChanged();
   e.target.blur(); // devolve o foco para o teclado tocar notas em seguida
 });
 document.getElementById('ctrl-root').addEventListener('change', (e) => {
   retune(e.target.value, currentScaleId);
-  saveWorkState();
+  onStateChanged();
   e.target.blur();
 });
 document.getElementById('ctrl-preset').addEventListener('change', (e) => {
   applyPreset(e.target.value);
   updateDeleteButton();
-  saveWorkState();
+  onStateChanged(); // acabou de aplicar o preset: indicador volta a "limpo"
   e.target.blur(); // devolve o foco ao teclado
 });
 // Save geral: qualquer ajuste nos controles do painel (sliders, ondas) grava
-// o estado de trabalho. Um listener único cobre todos (delegação de evento).
+// o estado de trabalho e atualiza o indicador. Listener único (delegação).
 const controlsRoot = document.getElementById('controls');
 if (controlsRoot) {
-  controlsRoot.addEventListener('input', saveWorkState);
-  controlsRoot.addEventListener('change', saveWorkState);
+  controlsRoot.addEventListener('input', onStateChanged);
+  controlsRoot.addEventListener('change', onStateChanged);
 }
-// Volume também faz parte da config lembrada.
+// Volume também faz parte da config lembrada (não afeta o indicador: não é
+// parte do preset).
 document.getElementById('ctrl-volume').addEventListener('input', saveWorkState);
 document.getElementById('save-vibe').addEventListener('click', () => {
   const input = document.getElementById('vibe-name');
@@ -895,8 +903,8 @@ function applyPreset(id) {
 }
 
 // (Re)popula o seletor com presets de fábrica + vibes do usuário na MESMA
-// lista. As do usuário levam id 'user:N' e um ★ no rótulo. keepId tenta manter
-// a seleção atual após reconstruir (ex.: depois de salvar/apagar).
+// lista, em dois grupos (optgroup). As do usuário levam id 'user:N'. keepId
+// tenta manter a seleção atual após reconstruir (ex.: depois de salvar/apagar).
 function populatePresetControl(keepId) {
   const sel = document.getElementById('ctrl-preset');
   if (!sel) return;
@@ -908,6 +916,8 @@ function populatePresetControl(keepId) {
   FACTORY_PRESETS.forEach((p) => {
     const opt = document.createElement('option');
     opt.value = p.id;
+    opt.dataset.name = p.label;   // nome base (sem prefixo)
+    opt.dataset.prefix = '';      // de fábrica: sem prefixo natural
     opt.textContent = p.label;
     factoryGroup.appendChild(opt);
   });
@@ -918,8 +928,11 @@ function populatePresetControl(keepId) {
     userGroup.label = 'Minhas vibes';
     userPresets.forEach((p, i) => {
       const opt = document.createElement('option');
+      const name = p.name || p.label || 'Vibe ' + (i + 1);
       opt.value = `user:${i}`;
-      opt.textContent = `★ ${p.name || p.label || 'Vibe ' + (i + 1)}`;
+      opt.dataset.name = name;
+      opt.dataset.prefix = '';   // sem prefixo (o grupo "Minhas vibes" já indica)
+      opt.textContent = name;
       userGroup.appendChild(opt);
     });
     sel.appendChild(userGroup);
@@ -929,6 +942,35 @@ function populatePresetControl(keepId) {
   sel.value = previous;
   if (!sel.value) sel.value = DEFAULT_PRESET_ID;
   updateDeleteButton();
+  refreshModifiedIndicator();
+}
+
+// Compara o estado atual dos controles com o preset selecionado. Se divergir,
+// marca a opção selecionada com '● ' (no início do nome) e acende o realce do
+// seletor (verde mais claro). Se bater, restaura o prefixo natural.
+function isStateModified() {
+  const sel = document.getElementById('ctrl-preset');
+  if (!sel) return false;
+  const preset = presetById(sel.value);
+  const cur = readCurrentVibe();
+  for (const field of Object.keys(PRESET_SLIDER)) {
+    if (Number(cur[field]) !== Number(preset[field])) return true;
+  }
+  if (cur.wave1 !== preset.wave1 || cur.wave2 !== preset.wave2) return true;
+  if (cur.scale !== preset.scale || cur.root !== preset.root) return true;
+  return false;
+}
+
+function refreshModifiedIndicator() {
+  const sel = document.getElementById('ctrl-preset');
+  if (!sel) return;
+  const opt = sel.selectedOptions && sel.selectedOptions[0];
+  if (!opt) return;
+  const base = opt.dataset.name || opt.textContent;
+  const prefix = opt.dataset.prefix || '';
+  const modified = isStateModified();
+  opt.textContent = modified ? `● ${base}` : `${prefix}${base}`;
+  sel.classList.toggle('modified', modified);
 }
 
 // Mostra o botão Apagar só quando uma vibe do USUÁRIO está selecionada.
