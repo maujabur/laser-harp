@@ -363,7 +363,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29c';
+const JS_VERSION = '2026-10-29d';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -371,8 +371,14 @@ function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
   audioStatus.style.color = error ? '#ff9292' : '#00ffcc';
 }
+
+// Linha de versão SEMPRE visível (não some com o status do áudio). Mostra as
+// versões de HTML e JS para diagnosticar cache do GitHub Pages de relance.
+const versionLine = document.getElementById('version-line');
+if (versionLine) versionLine.textContent = `HTML v${HTML_VERSION} · JS v${JS_VERSION}`;
+
 audioButton.addEventListener('click', () => { setAudioStatus('Botão acionado — iniciando áudio…'); unlockAudio(); ensureAudio().catch(() => {}); });
-setAudioStatus(`HTML v${HTML_VERSION} · JS v${JS_VERSION} — toque em Ativar áudio`);
+setAudioStatus('Toque em Ativar áudio ou numa tecla');
 
 
 setMasterVolume(masterVolume);

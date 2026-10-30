@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="html-version" content="2026-10-29c">
-  <title>Elka Synthex - Laser Harp (Preset 46)</title>
+  <meta name="html-version" content="2026-10-29d">
+  <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { max-width: 100%; overflow-x: hidden; }
     body {
       background-color: #0d0f12;
       color: #00ffcc;
@@ -126,15 +128,17 @@
       .key-box { flex-basis: 25%; min-width: 0; padding: 12px 4px; }
       /* Tela estreita: uma coluna só e rótulos que podem quebrar, para o
          painel nunca ficar mais largo que a tela. */
+      #controls-details { max-width: 100%; }
       .controls-panel { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
-      .control-group label { white-space: normal; }
+      .control-group { min-width: 0; }
+      .control-group label { white-space: normal; word-break: break-word; }
     }
   </style>
 </head>
 <body>
 
-  <h1>ELKA SYNTHEX - HARPA LASER</h1>
-  <p>Preset Nr. 46 (Pitch Glide Modulated Synced OSC) | Tone.js Engine</p>
+  <h1>HARPA LASER</h1>
+  <p id="version-line" style="color:#4a6b63;font-size:0.8rem;margin:0 0 14px">versão…</p>
   <p>Toque ou pressione uma tecla para tocar (o primeiro gesto ativa o áudio)</p>
 
   <div class="control-group" style="width:100%;max-width:800px;margin:0 0 14px">
@@ -221,6 +225,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29c" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29d" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
