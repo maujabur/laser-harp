@@ -558,7 +558,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29y';
+const JS_VERSION = '2026-10-29z';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -682,6 +682,18 @@ document.getElementById('vibe-name').addEventListener('keydown', (e) => {
 });
 document.getElementById('delete-vibe').addEventListener('click', () => {
   deleteSelectedVibe();
+});
+// Comércio exterior: exportar/importar arquivo .harpa.json.
+document.getElementById('export-vibe').addEventListener('click', () => {
+  exportCurrentVibe();
+});
+document.getElementById('import-vibe').addEventListener('click', () => {
+  document.getElementById('import-file').click();
+});
+document.getElementById('import-file').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) importVibeFile(file);
+  e.target.value = ''; // permite reimportar o mesmo arquivo depois
 });
 document.getElementById('ctrl-wave1').addEventListener('change', (e) => {
   harp?.setWaveform('osc1', e.target.value);
@@ -1038,6 +1050,104 @@ function deleteSelectedVibe() {
   saveUserPresets(userPresets);
   populatePresetControl(DEFAULT_PRESET_ID);
   saveWorkState();
+}
+
+// ---------------------------------------------------------------------------
+// IMPORT / EXPORT de arquivo (.harpa.json). Mesmo formato das vibes do usuário.
+// ---------------------------------------------------------------------------
+
+// Campos que definem uma vibe (para comparar e migrar). Deriva do mapa de
+// sliders + os extras (ondas, escala, nota).
+const VIBE_FIELDS = [...Object.keys(PRESET_SLIDER), 'wave1', 'wave2', 'scale', 'root'];
+
+// Preenche campos ausentes com os do preset padrão (migração de arquivos
+// antigos — ex.: sem 'interval'). Mantém o formato sempre completo.
+function fixVibe(obj) {
+  const base = presetById(DEFAULT_PRESET_ID);
+  const vibe = { version: VIBE_VERSION };
+  for (const f of VIBE_FIELDS) {
+    vibe[f] = (obj && obj[f] !== undefined) ? obj[f] : base[f];
+  }
+  vibe.name = (obj && typeof obj.name === 'string' && obj.name.trim()) ? obj.name.trim() : 'Vibe importada';
+  return vibe;
+}
+
+// Duas vibes são "iguais" se nome + todos os campos batem.
+function vibesAreEqual(a, b) {
+  if (!a || !b) return false;
+  if ((a.name || '') !== (b.name || '')) return false;
+  return VIBE_FIELDS.every(f => String(a[f]) === String(b[f]));
+}
+
+// Adiciona uma vibe à lista do usuário com a regra de duplicata combinada:
+// - idêntica (nome + params) -> ignora;
+// - mesmo nome, params diferentes -> renomeia "Nome (2)", "(3)"...;
+// - nova -> adiciona.
+// Retorna {status, index} para feedback.
+function addUserVibe(vibe) {
+  // Idêntica a alguma existente? ignora.
+  const sameIdx = userPresets.findIndex(v => vibesAreEqual(v, vibe));
+  if (sameIdx >= 0) return { status: 'duplicate', index: sameIdx };
+
+  // Resolve colisão de nome (params diferentes).
+  let name = vibe.name;
+  if (userPresets.some(v => (v.name || '') === name)) {
+    let n = 2;
+    while (userPresets.some(v => (v.name || '') === `${vibe.name} (${n})`)) n++;
+    name = `${vibe.name} (${n})`;
+  }
+  const stored = { ...vibe, name };
+  userPresets.push(stored);
+  saveUserPresets(userPresets);
+  return { status: 'added', index: userPresets.length - 1 };
+}
+
+// Exporta o ESTADO ATUAL como arquivo .harpa.json (download).
+function exportCurrentVibe() {
+  const vibe = readCurrentVibe();
+  // Nome: o do preset/vibe selecionado, ou um nome genérico.
+  const sel = document.getElementById('ctrl-preset');
+  const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+  vibe.name = (opt && opt.value !== UNSAVED_ID) ? opt.textContent.trim() : 'Minha vibe';
+  const safe = vibe.name.replace(/[^\w\-]+/g, '-').replace(/^-+|-+$/g, '') || 'vibe';
+  const blob = new Blob([JSON.stringify(vibe, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${safe}.harpa.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Importa uma vibe de arquivo: lê, valida, migra, adiciona (regra de
+// duplicata) e seleciona. Feedback via audio-status.
+function importVibeFile(file) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    let parsed;
+    try { parsed = JSON.parse(fr.result); }
+    catch { setAudioStatus('Importar falhou: arquivo não é JSON válido', true); return; }
+    if (!parsed || typeof parsed !== 'object') {
+      setAudioStatus('Importar falhou: conteúdo inválido', true); return;
+    }
+    const vibe = fixVibe(parsed);
+    const res = addUserVibe(vibe);
+    if (res.status === 'duplicate') {
+      populatePresetControl(`user:${res.index}`);
+      applyPreset(`user:${res.index}`);
+      updateDeleteButton();
+      setAudioStatus(`"${vibe.name}" já existe — selecionada`);
+    } else {
+      populatePresetControl(`user:${res.index}`);
+      applyPreset(`user:${res.index}`);
+      updateDeleteButton();
+      setAudioStatus(`Vibe "${userPresets[res.index].name}" importada`);
+    }
+  };
+  fr.onerror = () => setAudioStatus('Importar falhou: erro ao ler o arquivo', true);
+  fr.readAsText(file);
 }
 
 // ---------------------------------------------------------------------------
