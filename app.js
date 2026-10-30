@@ -407,7 +407,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29h';
+const JS_VERSION = '2026-10-29i';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -702,25 +702,41 @@ function retune(rootNote = currentRoot, scaleId = currentScaleId) {
 // botão Ativar áudio).
 let unlockPromise = null;
 function unlockAudio() {
+  const ctx = Tone.getContext();
   // Se já destravou, não repete.
-  if (Tone.getContext().state === 'running') return Promise.resolve();
+  if (ctx.state === 'running') return Promise.resolve();
   if (unlockPromise) return unlockPromise;
-  const raw = Tone.getContext().rawContext;
-  // Corrida com timeout: se o start/resume ficar pendurado (acontece no mobile
-  // quando o gesto é considerado inválido), não travamos para sempre — reseta
-  // e o próximo gesto tenta de novo.
-  const attempt = Promise.all([
-    Tone.start(),
-    raw && raw.resume ? raw.resume() : Promise.resolve()
-  ]);
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout ao destravar áudio')), 3000));
-  unlockPromise = Promise.race([attempt, timeout])
-    .then(() => { /* destravado */ })
-    .catch((error) => {
-      unlockPromise = null; // permite nova tentativa no próximo gesto
-      throw error;
-    });
+
+  const raw = ctx.rawContext;
+  // Dispara start/resume (não dependemos do quando a promise resolve — no
+  // mobile o primeiro start pode demorar vários segundos).
+  Tone.start().catch(() => {});
+  if (raw && raw.resume) raw.resume().catch(() => {});
+
+  // O sinal CONFIÁVEL de que destravou é o contexto virar 'running'. Ouvimos
+  // o statechange em vez de cronometrar o start — assim resolvemos no exato
+  // momento em que o áudio fica pronto, sem falso "timeout" quando o start
+  // normal simplesmente demora. O timeout longo é só rede contra travar eterno.
+  unlockPromise = new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (ok, err) => {
+      if (done) return;
+      done = true;
+      if (raw && raw.removeEventListener) raw.removeEventListener('statechange', onChange);
+      clearInterval(poll);
+      clearTimeout(timer);
+      if (ok) resolve(); else { unlockPromise = null; reject(err); }
+    };
+    const check = () => { if (raw && raw.state === 'running') finish(true); };
+    const onChange = () => check();
+    if (raw && raw.addEventListener) raw.addEventListener('statechange', onChange);
+    // Alguns browsers não disparam statechange de forma confiável; completamos
+    // com um polling leve.
+    const poll = setInterval(check, 150);
+    const timer = setTimeout(
+      () => finish(false, new Error('timeout ao destravar áudio')), 10000);
+    check(); // caso já esteja running neste instante
+  });
   return unlockPromise;
 }
 
