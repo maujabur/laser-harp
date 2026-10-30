@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="html-version" content="2026-10-29e">
+  <meta name="html-version" content="2026-10-29f">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -113,6 +113,32 @@
       opacity: 0.8;
       margin-top: 4px;
     }
+    /* Faixa de áudio com altura reservada, para o teclado não "pular" quando
+       o botão some ou a mensagem muda. */
+    .audio-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 84px;
+      margin: 10px 0 16px;
+    }
+    #start-audio {
+      padding: 12px 20px;
+      background: #00ffcc;
+      color: #0d0f12;
+      border: 0;
+      border-radius: 5px;
+      font-weight: bold;
+      font-family: monospace;
+      cursor: pointer;
+    }
+    #audio-status {
+      color: #00ffcc;
+      text-align: center;
+      min-height: 1.2em; /* reserva 1 linha: trocar o texto não muda a altura */
+    }
     .keys-container { width: 100%; touch-action: none; }
     @media (min-width: 900px) {
       .keys-container { max-width: 1280px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
@@ -164,7 +190,7 @@
 
     <div class="control-group">
       <label>Filtro (× nota): <span id="val-cutoff">4.0×</span></label>
-      <input type="range" id="ctrl-cutoff" min="0.5" max="8" step="0.1" value="4">
+      <input type="range" id="ctrl-cutoff" min="1.5" max="8" step="0.1" value="4">
     </div>
 
     <div class="control-group">
@@ -215,8 +241,12 @@
 
   </details>
 
-  <div id="audio-status" role="status" aria-live="polite" style="margin:10px 0;color:#00ffcc;text-align:center">Áudio ainda não iniciado</div>
-  <button id="start-audio" type="button" style="padding:12px 20px;margin:6px 0 16px;background:#00ffcc;color:#0d0f12;border:0;border-radius:5px;font-weight:bold;cursor:pointer">Ativar áudio</button>
+  <!-- Faixa de altura FIXA reservada: o botão sumir ou o texto mudar não
+       empurra o teclado para cima/baixo. -->
+  <div class="audio-bar">
+    <button id="start-audio" type="button">Ativar áudio</button>
+    <div id="audio-status" role="status" aria-live="polite">Áudio ainda não iniciado</div>
+  </div>
   <div class="keys-container" id="keyboard"></div>
 
   <script>
@@ -225,6 +255,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29e" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29f" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
