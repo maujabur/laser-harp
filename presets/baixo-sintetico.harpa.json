@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "glide": 20,
+  "cutoff": 3.0,
+  "res": 5.0,
+  "chorus": 0.0,
+  "sweep": 1,
+  "sweeptime": 30,
+  "interval": 12,
+  "osc2": 0.3,
+  "attack": 5,
+  "decay": 300,
+  "sustain": 0.6,
+  "release": 250,
+  "wave1": "sawtooth",
+  "wave2": "square",
+  "scale": "penta-menor",
+  "root": "G1",
+  "name": "Baixo Sintético"
+}

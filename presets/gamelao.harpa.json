@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "glide": 10,
+  "cutoff": 6.0,
+  "res": 2.0,
+  "chorus": 0.1,
+  "sweep": 0.5,
+  "sweeptime": 40,
+  "interval": 24,
+  "osc2": 0.4,
+  "attack": 3,
+  "decay": 700,
+  "sustain": 0.1,
+  "release": 600,
+  "wave1": "triangle",
+  "wave2": "sine",
+  "scale": "penta-maior",
+  "root": "G2",
+  "name": "Gamelão"
+}

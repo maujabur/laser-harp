@@ -1,0 +1,8 @@
+{
+  "comment": "Índice da coleção de presets. Para adicionar um preset: coloque o arquivo .harpa.json nesta pasta e inclua o nome do arquivo na lista abaixo.",
+  "files": [
+    "gamelao.harpa.json",
+    "baixo-sintetico.harpa.json",
+    "nuvem-dorica.harpa.json"
+  ]
+}

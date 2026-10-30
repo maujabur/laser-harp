@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "glide": 150,
+  "cutoff": 3.5,
+  "res": 1.0,
+  "chorus": 0.4,
+  "sweep": 0.5,
+  "sweeptime": 100,
+  "interval": 19,
+  "osc2": 0.45,
+  "attack": 800,
+  "decay": 1000,
+  "sustain": 0.85,
+  "release": 2000,
+  "wave1": "triangle",
+  "wave2": "sawtooth",
+  "scale": "dorico",
+  "root": "D2",
+  "name": "Nuvem Dórica"
+}

@@ -534,7 +534,8 @@ const PRESET_SLIDER = {
 // let). selectedPresetId = de qual preset as alterações divergem.
 const UNSAVED_ID = '__unsaved__';
 let selectedPresetId = DEFAULT_PRESET_ID;
-let userPresets = loadUserPresets(); // vibes do usuário (localStorage)
+let userPresets = loadUserPresets();   // vibes do usuário (localStorage)
+let collectionPresets = [];            // presets da pasta web /presets (fetch)
 function loadVolume() {
   try {
     const raw = localStorage.getItem(VOLUME_KEY);
@@ -560,7 +561,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29ad';
+const JS_VERSION = '2026-10-29ae';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -633,6 +634,7 @@ if (savedWorkState) {
   updateDeleteButton();
 }
 refreshModifiedIndicator(); // honra o estado real (pode já vir modificado)
+loadCollection();           // carrega presets da pasta web em segundo plano
 // Chamado em qualquer mudança de estado: grava a config e atualiza o indicador
 // de "modificado" (●). Só o indicador é imediato; o save tem debounce próprio.
 function onStateChanged() {
@@ -922,6 +924,10 @@ function presetById(id) {
     const i = Number(id.slice(5));
     if (userPresets[i]) return userPresets[i];
   }
+  if (id && id.startsWith('coll:')) {
+    const i = Number(id.slice(5));
+    if (collectionPresets[i]) return collectionPresets[i];
+  }
   return FACTORY_PRESETS.find(p => p.id === id) || FACTORY_PRESETS[0];
 }
 
@@ -985,6 +991,18 @@ function populatePresetControl(keepId) {
     factoryGroup.appendChild(opt);
   });
   sel.appendChild(factoryGroup);
+
+  if (collectionPresets.length) {
+    const collGroup = document.createElement('optgroup');
+    collGroup.label = 'Da coleção';
+    collectionPresets.forEach((p, i) => {
+      const opt = document.createElement('option');
+      opt.value = `coll:${i}`;
+      opt.textContent = p.name || p.label || 'Coleção ' + (i + 1);
+      collGroup.appendChild(opt);
+    });
+    sel.appendChild(collGroup);
+  }
 
   if (userPresets.length) {
     const userGroup = document.createElement('optgroup');
@@ -1143,7 +1161,11 @@ function vibesAreEqual(a, b) {
 function addUserVibe(vibe) {
   // Já existe de fábrica (mesmo som)?
   const factory = FACTORY_PRESETS.find(p => vibesAreEqual(p, vibe));
-  if (factory) return { status: 'factory', id: factory.id, name: factory.label };
+  if (factory) return { status: 'builtin', id: factory.id, name: factory.label };
+
+  // Já existe na coleção (pasta web)?
+  const collIdx = collectionPresets.findIndex(p => vibesAreEqual(p, vibe));
+  if (collIdx >= 0) return { status: 'builtin', id: `coll:${collIdx}`, name: collectionPresets[collIdx].name };
 
   // Já existe entre as minhas vibes (mesmo som)?
   const sameIdx = userPresets.findIndex(v => vibesAreEqual(v, vibe));
@@ -1198,12 +1220,12 @@ function importVibeFile(file) {
     }
     const vibe = fixVibe(parsed);
     const res = addUserVibe(vibe);
-    if (res.status === 'factory') {
-      // Mesmo som de um preset de fábrica: só seleciona, não cria cópia.
+    if (res.status === 'builtin') {
+      // Mesmo som de um preset de fábrica ou da coleção: só seleciona.
       populatePresetControl(res.id);
       applyPreset(res.id);
       updateDeleteButton();
-      showToast(`Já existe de fábrica: "${res.name}" — selecionada`);
+      showToast(`Já existe: "${res.name}" — selecionada`);
     } else if (res.status === 'duplicate') {
       populatePresetControl(`user:${res.index}`);
       applyPreset(`user:${res.index}`);
@@ -1218,6 +1240,35 @@ function importVibeFile(file) {
   };
   fr.onerror = () => showToast('Erro ao ler o arquivo', true);
   fr.readAsText(file);
+}
+
+// Carrega a coleção de presets da pasta web /presets (assíncrono). Lê o índice
+// presets/index.json e busca cada arquivo. Valida com fixVibe. Em caso de
+// falha (offline, sem a pasta), ignora silenciosamente — a app segue só com os
+// de fábrica. Ao terminar, repopula o seletor mantendo a seleção atual.
+async function loadCollection() {
+  try {
+    const idxRes = await fetch('presets/index.json', { cache: 'no-cache' });
+    if (!idxRes.ok) return;
+    const idx = await idxRes.json();
+    const files = Array.isArray(idx.files) ? idx.files : [];
+    const loaded = [];
+    for (const file of files) {
+      try {
+        const res = await fetch(`presets/${file}`, { cache: 'no-cache' });
+        if (!res.ok) continue;
+        const raw = await res.json();
+        const vibe = fixVibe(raw);
+        vibe.name = (raw && typeof raw.name === 'string' && raw.name.trim())
+          ? raw.name.trim() : file.replace(/\.harpa\.json$/i, '');
+        loaded.push(vibe);
+      } catch { /* arquivo da coleção inválido: pula */ }
+    }
+    if (loaded.length) {
+      collectionPresets = loaded;
+      populatePresetControl(selectedPresetId); // mostra o grupo "Da coleção"
+    }
+  } catch { /* sem coleção: segue só com os de fábrica */ }
 }
 
 // ---------------------------------------------------------------------------
