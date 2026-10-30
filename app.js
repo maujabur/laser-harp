@@ -204,14 +204,20 @@ const DEFAULT_PRESET_ID = 'harpa-classica';
 // ---------------------------------------------------------------------------
 class LaserVoice {
   constructor(destination, pwmLfo) {
+    // Compensação de ganho do filtro: quanto mais o filtro fecha (keyTrack
+    // baixo), mais energia de harmônicos se perde e mais baixo fica o som.
+    // Este ganho recupera parte dessa perda, para mudar o brilho não derrubar
+    // tanto o volume. Fica DEPOIS do filtro, antes do destino.
+    this.comp = new Tone.Gain(1).connect(destination);
+
     // Filtro low-pass POR VOZ (12 dB/oct). Seu cutoff acompanha a nota tocada
-    // (key tracking), calculado no attack. Fica entre o envelope e o destino.
+    // (key tracking), calculado no attack. Fica entre o envelope e a compensação.
     this.filter = new Tone.Filter({
       frequency: 1000,          // placeholder; definido por nota no attack
       type: 'lowpass',
       rolloff: -12,
       Q: PRESET.filter.Q
-    }).connect(destination);
+    }).connect(this.comp);
 
     // Envelope de amplitude compartilhado -> filtro da voz.
     this.amp = new Tone.AmplitudeEnvelope(PRESET.envelope).connect(this.filter);
@@ -294,6 +300,11 @@ class LaserVoice {
       cutoff, time + this.portamento
     );
 
+    // Compensação de ganho desliza junto com o filtro.
+    const comp = filterCompensation(this.filterKeyTrack);
+    this.comp.gain.setValueAtTime(this.comp.gain.value, time);
+    this.comp.gain.linearRampToValueAtTime(comp, time + this.portamento);
+
     this.amp.triggerAttack(time);
   }
 
@@ -339,8 +350,21 @@ class LaserVoice {
     this.gain1.dispose();
     this.gain2.dispose();
     this.filter.dispose();
+    this.comp.dispose();
     this.amp.dispose();
   }
+}
+
+// Ganho de compensação do filtro a partir do fator de key tracking. Neutro
+// (1.0) quando o filtro está aberto (keyTrack >= REF); sobe suavemente quando
+// fecha, para recuperar a energia perdida. Curva logarítmica (expoente < 1) e
+// teto para não estourar. Calibrado empiricamente.
+function filterCompensation(keyTrack) {
+  const REF = 4.0;      // ponto de ganho neutro (o default)
+  const CEILING = 2.6;  // compensação máxima
+  if (keyTrack >= REF) return 1.0;
+  const comp = Math.pow(REF / keyTrack, 0.6);
+  return Math.min(CEILING, comp);
 }
 
 // ---------------------------------------------------------------------------
@@ -450,7 +474,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29m';
+const JS_VERSION = '2026-10-29n';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
