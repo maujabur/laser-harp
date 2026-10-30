@@ -407,7 +407,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29j';
+const JS_VERSION = '2026-10-29k';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -421,7 +421,7 @@ function setAudioStatus(message, error = false) {
 const versionLine = document.getElementById('version-line');
 if (versionLine) versionLine.textContent = `HTML v${HTML_VERSION} · JS v${JS_VERSION}`;
 
-audioButton.addEventListener('click', () => { setAudioStatus('Iniciando áudio…'); ensureAudio().catch(() => {}); });
+audioButton.addEventListener('click', () => { setAudioStatus('Iniciando áudio…'); wakeAudio(); });
 setAudioStatus('Toque no botão ou numa tecla para ativar o áudio');
 
 
@@ -441,11 +441,12 @@ KEY_MAP.forEach((data, index) => {
   el.setAttribute('aria-label', `Tocar nota ${data.note}`);
   el.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    e.preventDefault();
-    // ESTADO "dormindo": o 1º toque SÓ ativa o áudio (destravamento), como o
-    // botão — não tenta tocar nota. O usuário toca de novo e aí sim soa.
-    if (!isStarted) { ensureAudio().catch(() => {}); return; }
+    // ESTADO "dormindo": o 1º toque SÓ acorda o áudio. Aqui NÃO chamamos
+    // preventDefault — no mobile ele pode invalidar o gesto e pendurar o
+    // Tone.start(). Sem nota para segurar ainda, não precisamos dele.
+    if (!isStarted) { wakeAudio(); return; }
     // ESTADO "tocando": áudio ativo, toca a nota normalmente.
+    e.preventDefault();
     try { el.setPointerCapture(e.pointerId); } catch { /* mobile: ok ignorar */ }
     activePointers.set(e.pointerId, index);
     updateNote(index);
@@ -688,10 +689,17 @@ function retune(rootNote = currentRoot, scaleId = currentScaleId) {
   applyScale(rootNote, scaleId);
 }
 
-// Inicia o áudio (mesmo mecanismo simples do botão, que já funcionava no
-// mobile): Tone.start() direto dentro do gesto. Sem unlock global, sem
-// statechange, sem timeout — aquilo só regredia o caminho do botão.
-// Idempotente e tolerante a falha (permite nova tentativa no próximo gesto).
+// "Acorda" o áudio a partir de um gesto: SÓ o Tone.start() cru, leve e
+// idempotente — NÃO monta o grafo aqui e NÃO guarda promise em
+// audioInitPromise. Assim, se o start pendurar no mobile (acontece em
+// pointerdown com preventDefault), nada fica preso e o botão continua livre.
+// Quando o start resolve, aí sim montamos o grafo via ensureAudio().
+function wakeAudio() {
+  Tone.start().then(() => ensureAudio()).catch(() => { /* tenta no próximo gesto */ });
+}
+
+// Monta o grafo de áudio (pesado). Idempotente e tolerante a falha (permite
+// nova tentativa num próximo gesto, sem travar o estado).
 function ensureAudio() {
   if (isStarted) return Promise.resolve();
   if (!audioInitPromise) {
@@ -734,10 +742,11 @@ window.addEventListener('keydown', (e) => {
   if (typingInField()) return;
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
-  e.preventDefault();
-  // ESTADO "dormindo": 1ª tecla só ativa o áudio (não soa ainda).
-  if (!isStarted) { ensureAudio().catch(() => {}); return; }
+  // ESTADO "dormindo": 1ª tecla só acorda o áudio (sem preventDefault, para
+  // não invalidar o gesto; não soa ainda).
+  if (!isStarted) { wakeAudio(); return; }
   // ESTADO "tocando": áudio ativo, toca a nota.
+  e.preventDefault();
   activeKeys.add(index);
   updateNote(index);
 });
