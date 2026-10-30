@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="html-version" content="2026-10-29d">
+  <meta name="html-version" content="2026-10-29e">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -163,8 +163,8 @@
     </div>
 
     <div class="control-group">
-      <label>Filtro Cutoff (Hz): <span id="val-cutoff">950</span></label>
-      <input type="range" id="ctrl-cutoff" min="200" max="8000" step="50" value="950">
+      <label>Filtro (× nota): <span id="val-cutoff">4.0×</span></label>
+      <input type="range" id="ctrl-cutoff" min="0.5" max="8" step="0.1" value="4">
     </div>
 
     <div class="control-group">
@@ -225,6 +225,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29d" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29e" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>

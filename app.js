@@ -145,8 +145,14 @@ const PRESET = {
   // Portamento (glide) global entre notas, em segundos.
   portamento: 0.035,
 
+  // Filtro com KEY TRACKING: o cutoff acompanha a nota tocada, por voz.
+  //   keyTrack = múltiplo da frequência da nota (1.0 = cutoff na própria
+  //   fundamental; 2.0 = uma oitava acima; 4.0 = duas oitavas acima).
+  // Assim graves e agudas têm o mesmo brilho relativo, e mudar a nota base
+  // não altera o timbre. Q é a ressonância.
+  filter:  { keyTrack: 4.0, Q: 3.6 },
+
   // Cadeia de efeitos (reverb removido para aliviar o Raspberry Pi).
-  filter:  { frequency: 950, Q: 3.6 },
   chorus:  { frequency: 1.2, delayTime: 4.5, depth: 0.8, wet: 0.05 }
 };
 
@@ -155,8 +161,17 @@ const PRESET = {
 // ---------------------------------------------------------------------------
 class LaserVoice {
   constructor(destination, pwmLfo) {
-    // Envelope de amplitude compartilhado -> destino (filtro).
-    this.amp = new Tone.AmplitudeEnvelope(PRESET.envelope).connect(destination);
+    // Filtro low-pass POR VOZ (12 dB/oct). Seu cutoff acompanha a nota tocada
+    // (key tracking), calculado no attack. Fica entre o envelope e o destino.
+    this.filter = new Tone.Filter({
+      frequency: 1000,          // placeholder; definido por nota no attack
+      type: 'lowpass',
+      rolloff: -12,
+      Q: PRESET.filter.Q
+    }).connect(destination);
+
+    // Envelope de amplitude compartilhado -> filtro da voz.
+    this.amp = new Tone.AmplitudeEnvelope(PRESET.envelope).connect(this.filter);
 
     // OSC1: a fundamental (fica na nota tocada).
     this.osc1 = new Tone.PulseOscillator({
@@ -190,6 +205,7 @@ class LaserVoice {
     this.osc2Semitones = PRESET.osc2Semitones;
     this.sweepSemitones = PRESET.osc2SweepSemitones;
     this.sweepTime = PRESET.osc2SweepTime;
+    this.filterKeyTrack = PRESET.filter.keyTrack; // múltiplo da freq. da nota
 
     this.busy = false;
     this.note = null;
@@ -226,6 +242,15 @@ class LaserVoice {
       f2Target, time + this.sweepTime
     );
 
+    // Filtro (key tracking): cutoff = fator × frequência da nota. Desliza
+    // junto com o glide. Clamp num teto seguro para não passar do Nyquist
+    // em notas agudas com fator alto.
+    const cutoff = Math.min(18000, Math.max(20, this.filterKeyTrack * f1));
+    this.filter.frequency.setValueAtTime(this.filter.frequency.value, time);
+    this.filter.frequency.exponentialRampToValueAtTime(
+      cutoff, time + this.portamento
+    );
+
     this.amp.triggerAttack(time);
   }
 
@@ -255,11 +280,22 @@ class LaserVoice {
     this.gain2.gain.rampTo(level, 0.05);
   }
 
+  // Fator de key tracking do filtro (vale da próxima nota em diante).
+  setFilterKeyTrack(factor) {
+    this.filterKeyTrack = factor;
+  }
+
+  // Ressonância do filtro (aplicada imediatamente a esta voz).
+  setFilterQ(q) {
+    this.filter.Q.rampTo(q, 0.05);
+  }
+
   dispose() {
     this.osc1.dispose();
     this.osc2.dispose();
     this.gain1.dispose();
     this.gain2.dispose();
+    this.filter.dispose();
     this.amp.dispose();
   }
 }
@@ -329,6 +365,14 @@ class LaserHarp {
     this.voices.forEach(v => v.setOsc2Level(level));
   }
 
+  setFilterKeyTrack(factor) {
+    this.voices.forEach(v => v.setFilterKeyTrack(factor));
+  }
+
+  setFilterQ(q) {
+    this.voices.forEach(v => v.setFilterQ(q));
+  }
+
   setEnvelope(param, value) {
     this.voices.forEach(v => { v.amp[param] = value; });
   }
@@ -336,7 +380,7 @@ class LaserHarp {
 
 let isStarted = false;
 let isStarting = false;
-let harp, filter, chorus, inputGain, masterGain, pwmLfo;
+let harp, chorus, inputGain, masterGain, pwmLfo;
 const VOLUME_KEY = 'laser-harp-master-volume-v1';
 function loadVolume() {
   try {
@@ -363,7 +407,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29d';
+const JS_VERSION = '2026-10-29e';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -467,18 +511,10 @@ async function initAudio() {
     wet: PRESET.chorus.wet
   }).connect(masterGain).start();
 
-  // Filtro Low-Pass 12 dB/oct (metade do custo do -24; timbre levemente
-  // mais aberto, mas mais leve para o Pi).
-  filter = new Tone.Filter({
-    frequency: PRESET.filter.frequency,
-    type: 'lowpass',
-    rolloff: -12,
-    Q: PRESET.filter.Q
-  }).connect(chorus);
-
-  // Teste móvel: atenuação de -12 dB ANTES dos efeitos, sem mudar o timbre.
-  // 10 ^ (-12 / 20) = 0.2511886; todas as vozes somam neste estágio.
-  inputGain = new Tone.Gain(0.2511886).connect(filter);
+  // O filtro agora é POR VOZ (key tracking), dentro de cada LaserVoice.
+  // Aqui só somamos as vozes já filtradas e atenuamos -12 dB antes do chorus.
+  // 10 ^ (-12 / 20) = 0.2511886.
+  inputGain = new Tone.Gain(0.2511886).connect(chorus);
 
   // LFO triangular ÚNICO, compartilhado por todas as vozes (PWM do OSC2).
   pwmLfo = new Tone.LFO({
@@ -512,18 +548,19 @@ function bindControls() {
     harp.setPortamento(val / 1000);
   });
 
-  // Cutoff
+  // Filtro (× nota) — key tracking: cutoff = fator × frequência da nota.
+  // Vale da próxima nota em diante.
   document.getElementById('ctrl-cutoff').addEventListener('input', (e) => {
-    const val = parseInt(e.target.value);
-    document.getElementById('val-cutoff').innerText = val;
-    filter.frequency.rampTo(val, 0.05);
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-cutoff').innerText = `${val.toFixed(1)}×`;
+    harp.setFilterKeyTrack(val);
   });
 
-  // Ressonância (Q)
+  // Ressonância (Q) — aplicada a todas as vozes.
   document.getElementById('ctrl-res').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     document.getElementById('val-res').innerText = val;
-    filter.Q.rampTo(val, 0.05);
+    harp.setFilterQ(val);
   });
 
   // Chorus
@@ -667,10 +704,17 @@ function ensureAudio() {
   return audioInitPromise;
 }
 
-// True quando o foco está num campo de formulário (select/input/textarea),
-// para que as teclas físicas não vazem como atalho desses campos.
+// True quando o foco está num campo que CAPTURA teclas (select, campo de
+// texto, textarea). Sliders (input[type=range]) NÃO contam: a tecla "C" não
+// faz nada útil num range, então deixamos a nota tocar mesmo com o slider
+// focado — assim dá para ajustar o som e tocar ao mesmo tempo.
 function typingInField() {
-  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'SELECT' || tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT') return el.type !== 'range';
+  return false;
 }
 
 window.addEventListener('keydown', async (e) => {
