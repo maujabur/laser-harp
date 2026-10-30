@@ -175,37 +175,46 @@ const FACTORY_PRESETS = [
   {
     id: 'harpa-classica', label: 'Harpa Clássica',
     wave1: 'pulse', wave2: 'pulse',
-    glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, sweep: 1, sweeptime: 40,
+    glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, interval: 31, sweep: 1, sweeptime: 40,
     osc2: 0.26, attack: 10, decay: 400, sustain: 0.55, release: 500,
     scale: 'penta-menor', root: 'C2'
   },
   {
     id: 'pad-etereo', label: 'Pad Etéreo',
     wave1: 'sawtooth', wave2: 'triangle',
-    glide: 120, cutoff: 3.2, res: 1.5, chorus: 0.35, sweep: 0.5, sweeptime: 80,
+    glide: 120, cutoff: 3.2, res: 1.5, chorus: 0.35, interval: 12, sweep: 0.5, sweeptime: 80,
     osc2: 0.4, attack: 600, decay: 800, sustain: 0.8, release: 1800,
     scale: 'penta-maior', root: 'C2'
   },
   {
     id: 'pluck-curto', label: 'Pluck Curto',
     wave1: 'square', wave2: 'pulse',
-    glide: 10, cutoff: 5.5, res: 2.5, chorus: 0.08, sweep: 2, sweeptime: 30,
+    glide: 10, cutoff: 5.5, res: 2.5, chorus: 0.08, interval: 19, sweep: 2, sweeptime: 30,
     osc2: 0.3, attack: 3, decay: 220, sustain: 0.0, release: 180,
     scale: 'penta-menor', root: 'D2'
   },
   {
     id: 'drone-profundo', label: 'Drone Profundo',
     wave1: 'sawtooth', wave2: 'sawtooth',
-    glide: 90, cutoff: 3.2, res: 4.5, chorus: 0.2, sweep: 1, sweeptime: 60,
+    glide: 90, cutoff: 3.2, res: 4.5, chorus: 0.2, interval: 12, sweep: 1, sweeptime: 60,
     osc2: 0.5, attack: 200, decay: 600, sustain: 0.9, release: 1400,
     scale: 'penta-menor', root: 'G1'
   },
   {
     id: 'sino-cristalino', label: 'Sino Cristalino',
     wave1: 'sine', wave2: 'triangle',
-    glide: 15, cutoff: 7.0, res: 1.0, chorus: 0.12, sweep: 0.5, sweeptime: 40,
+    glide: 15, cutoff: 7.0, res: 1.0, chorus: 0.12, interval: 24, sweep: 0.5, sweeptime: 40,
     osc2: 0.35, attack: 4, decay: 900, sustain: 0.15, release: 700,
     scale: 'penta-maior', root: 'G2'
+  },
+  {
+    // Capturado da vibe "Oriental" do usuário (senoide + pulse, filtro bem
+    // aberto, OSC2 agudo). Preservado como preset de fábrica.
+    id: 'oriental', label: 'Oriental',
+    wave1: 'sine', wave2: 'pulse',
+    glide: 35, cutoff: 8.0, res: 3.6, chorus: 0.05, interval: 31, sweep: 0, sweeptime: 40,
+    osc2: 1.0, attack: 10, decay: 400, sustain: 0.55, release: 500,
+    scale: 'penta-menor', root: 'C2'
   }
 ];
 const DEFAULT_PRESET_ID = 'harpa-classica';
@@ -345,6 +354,11 @@ class LaserVoice {
     this.sweepTime = seconds;
   }
 
+  // Intervalo base do OSC2 acima da nota (semitons). Vale da próxima nota.
+  setOsc2Semitones(semitones) {
+    this.osc2Semitones = semitones;
+  }
+
   // Ajusta o ganho do OSC2 na mistura (0 a 1). Suave para evitar estalos.
   setOsc2Level(level) {
     this.gain2.gain.rampTo(level, 0.05);
@@ -468,6 +482,10 @@ class LaserHarp {
     this.voices.forEach(v => v.setSweepSemitones(semitones));
   }
 
+  setOsc2Semitones(semitones) {
+    this.voices.forEach(v => v.setOsc2Semitones(semitones));
+  }
+
   setSweepTime(seconds) {
     this.voices.forEach(v => v.setSweepTime(seconds));
   }
@@ -506,8 +524,8 @@ const VIBE_VERSION = 1;
 const PRESET_SLIDER = {
   glide: 'ctrl-glide', cutoff: 'ctrl-cutoff', res: 'ctrl-res',
   chorus: 'ctrl-chorus', sweep: 'ctrl-sweep', sweeptime: 'ctrl-sweeptime',
-  osc2: 'ctrl-osc2', attack: 'ctrl-attack', decay: 'ctrl-decay',
-  sustain: 'ctrl-sustain', release: 'ctrl-release'
+  interval: 'ctrl-interval', osc2: 'ctrl-osc2', attack: 'ctrl-attack',
+  decay: 'ctrl-decay', sustain: 'ctrl-sustain', release: 'ctrl-release'
 };
 // Entrada especial "✎ Não salvo" e o preset REAL selecionado. No topo porque o
 // setup os usa antes de o código de presets aparecer no arquivo (TDZ de const/
@@ -540,7 +558,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29x';
+const JS_VERSION = '2026-10-29y';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -763,6 +781,14 @@ function bindControls() {
     if (chorus) chorus.wet.rampTo(val, 0.05);
   });
 
+  // Intervalo base do OSC2 acima da nota (semitons). Define o caráter: 12 =
+  // oitava, 31 = o brilho da harpa laser. Vale da próxima nota em diante.
+  document.getElementById('ctrl-interval').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    document.getElementById('val-interval').innerText = val;
+    harp?.setOsc2Semitones(val);
+  });
+
   // Sweep OSC2 — intensidade do "poinnn" (vale da próxima nota em diante)
   document.getElementById('ctrl-sweep').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
@@ -827,6 +853,7 @@ function applyControlValues() {
   chorus.wet.rampTo(num('ctrl-chorus'), 0.05);
   harp.setSweepSemitones(num('ctrl-sweep'));
   harp.setSweepTime(num('ctrl-sweeptime') / 1000);
+  harp.setOsc2Semitones(num('ctrl-interval'));
   harp.setOsc2Level(num('ctrl-osc2'));
   harp.setEnvelope('attack', num('ctrl-attack') / 1000);
   harp.setEnvelope('decay', num('ctrl-decay') / 1000);

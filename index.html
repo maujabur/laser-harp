@@ -6,7 +6,7 @@
   <meta name="author" content="Mauricio Jabur — MauMaker">
   <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
   <meta name="generator" content="Kiro">
-  <meta name="html-version" content="2026-10-29x">
+  <meta name="html-version" content="2026-10-29y">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -297,6 +297,11 @@
     </div>
 
     <div class="control-group">
+      <label>Intervalo OSC2 (semitons): <span id="val-interval">31</span></label>
+      <input type="range" id="ctrl-interval" min="0" max="36" step="1" value="31">
+    </div>
+
+    <div class="control-group">
       <label>Sweep OSC2 (semitons): <span id="val-sweep">1</span></label>
       <input type="range" id="ctrl-sweep" min="0" max="12" step="0.5" value="1">
     </div>
@@ -354,6 +359,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-29x" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-29y" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>
