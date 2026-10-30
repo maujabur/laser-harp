@@ -500,6 +500,15 @@ const VOLUME_KEY = 'laser-harp-master-volume-v1';
 const USER_PRESETS_KEY = 'laser-harp-user-presets-v1';
 const WORKSTATE_KEY = 'laser-harp-workstate-v1'; // última config (save geral)
 const VIBE_VERSION = 1;
+// Mapa campo-do-preset -> id-do-slider. No topo porque applyWorkState (no
+// setup) o usa antes de o código de presets aparecer no arquivo (const tem
+// temporal dead zone, diferente de function).
+const PRESET_SLIDER = {
+  glide: 'ctrl-glide', cutoff: 'ctrl-cutoff', res: 'ctrl-res',
+  chorus: 'ctrl-chorus', sweep: 'ctrl-sweep', sweeptime: 'ctrl-sweeptime',
+  osc2: 'ctrl-osc2', attack: 'ctrl-attack', decay: 'ctrl-decay',
+  sustain: 'ctrl-sustain', release: 'ctrl-release'
+};
 let userPresets = loadUserPresets(); // vibes do usuário (localStorage)
 function loadVolume() {
   try {
@@ -526,7 +535,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29u';
+const JS_VERSION = '2026-10-29v';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -809,14 +818,6 @@ function applyControlValues() {
   harp.setEnvelope('sustain', num('ctrl-sustain'));
   harp.setEnvelope('release', num('ctrl-release') / 1000);
 }
-
-// Mapa id-do-preset -> campo -> id-do-slider. Centraliza a correspondência.
-const PRESET_SLIDER = {
-  glide: 'ctrl-glide', cutoff: 'ctrl-cutoff', res: 'ctrl-res',
-  chorus: 'ctrl-chorus', sweep: 'ctrl-sweep', sweeptime: 'ctrl-sweeptime',
-  osc2: 'ctrl-osc2', attack: 'ctrl-attack', decay: 'ctrl-decay',
-  sustain: 'ctrl-sustain', release: 'ctrl-release'
-};
 
 // ---------------------------------------------------------------------------
 // VIBES DO USUÁRIO (localStorage). Mesma estrutura dos presets de fábrica,
