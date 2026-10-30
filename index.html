@@ -62,9 +62,11 @@
       accent-color: #00ffcc;
       cursor: pointer;
       width: 100%;
+      box-sizing: border-box;
     }
     .control-group select {
       width: 100%;
+      box-sizing: border-box;
       background: #0d0f12;
       color: #00ffcc;
       border: 1px solid #00ffcc;
@@ -121,6 +123,10 @@
       p { text-align: center; }
       .keys-container { gap: 7px; }
       .key-box { flex-basis: 25%; min-width: 0; padding: 12px 4px; }
+      /* Tela estreita: uma coluna só e rótulos que podem quebrar, para o
+         painel nunca ficar mais largo que a tela. */
+      .controls-panel { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
+      .control-group label { white-space: normal; }
     }
   </style>
 </head>
@@ -214,6 +220,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=20261029-scales" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=20261029-scale-fixes" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>

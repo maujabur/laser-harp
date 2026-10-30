@@ -360,7 +360,7 @@ const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
-const APP_VERSION = '2026-10-29 scales';
+const APP_VERSION = '2026-10-29 scale-fixes';
 const audioButton = document.getElementById('start-audio');
 function setAudioStatus(message, error = false) {
   audioStatus.textContent = message;
@@ -412,9 +412,11 @@ KEY_MAP.forEach((data, index) => {
 populateScaleControls();
 document.getElementById('ctrl-scale').addEventListener('change', (e) => {
   retune(currentRoot, e.target.value);
+  e.target.blur(); // devolve o foco para o teclado tocar notas em seguida
 });
 document.getElementById('ctrl-root').addEventListener('change', (e) => {
   retune(e.target.value, currentScaleId);
+  e.target.blur();
 });
 
 // Inicialização do Áudio.
@@ -631,15 +633,24 @@ function ensureAudio() {
   return audioInitPromise;
 }
 
+// True quando o foco está num campo de formulário (select/input/textarea),
+// para que as teclas físicas não vazem como atalho desses campos.
+function typingInField() {
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+}
+
 window.addEventListener('keydown', async (e) => {
   if ((e.code === 'ArrowUp' || e.code === 'ArrowDown') &&
-      !e.altKey && !e.ctrlKey && !e.metaKey &&
-      !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+      !e.altKey && !e.ctrlKey && !e.metaKey && !typingInField()) {
     e.preventDefault();
     setMasterVolume(masterVolume + (e.code === 'ArrowUp' ? 5 : -5));
     return;
   }
   if (e.repeat) return;
+  // Ignora teclas de nota quando o foco está num campo de formulário (ex.: o
+  // <select> de escala/nota). Senão, apertar "C" com o select focado o faz
+  // pular entre opções C2, C3... em vez de tocar.
+  if (typingInField()) return;
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
   e.preventDefault();
@@ -653,6 +664,9 @@ window.addEventListener('keydown', async (e) => {
 window.addEventListener('keyup', (e) => {
   const index = CODE_TO_INDEX.get(e.code);
   if (index === undefined) return;
+  // Sempre processa o keyup se a tecla estava ativa, mesmo que o foco tenha
+  // mudado no meio, para não deixar uma nota presa.
+  if (!activeKeys.has(index)) return;
   e.preventDefault();
   activeKeys.delete(index);
   updateNote(index);
