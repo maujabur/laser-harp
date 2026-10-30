@@ -509,6 +509,11 @@ const PRESET_SLIDER = {
   osc2: 'ctrl-osc2', attack: 'ctrl-attack', decay: 'ctrl-decay',
   sustain: 'ctrl-sustain', release: 'ctrl-release'
 };
+// Entrada especial "✎ Não salvo" e o preset REAL selecionado. No topo porque o
+// setup os usa antes de o código de presets aparecer no arquivo (TDZ de const/
+// let). selectedPresetId = de qual preset as alterações divergem.
+const UNSAVED_ID = '__unsaved__';
+let selectedPresetId = DEFAULT_PRESET_ID;
 let userPresets = loadUserPresets(); // vibes do usuário (localStorage)
 function loadVolume() {
   try {
@@ -535,7 +540,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29w';
+const JS_VERSION = '2026-10-29x';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -625,10 +630,12 @@ document.getElementById('ctrl-root').addEventListener('change', (e) => {
   e.target.blur();
 });
 document.getElementById('ctrl-preset').addEventListener('change', (e) => {
-  applyPreset(e.target.value);
+  // Selecionar a própria entrada "✎ Não salvo" não faz nada (já é o estado).
+  if (e.target.value === UNSAVED_ID) { e.target.blur(); return; }
+  applyPreset(e.target.value); // descarta alterações, carrega o preset limpo
   updateDeleteButton();
-  onStateChanged(); // acabou de aplicar o preset: indicador volta a "limpo"
-  e.target.blur(); // devolve o foco ao teclado
+  saveWorkState();             // persiste a nova config (sem o indicador)
+  e.target.blur();             // devolve o foco ao teclado
 });
 // Save geral: qualquer ajuste nos controles do painel (sliders, ondas) grava
 // o estado de trabalho e atualiza o indicador. Listener único (delegação).
@@ -897,9 +904,15 @@ function applyPreset(id) {
   if (scaleSel) scaleSel.value = preset.scale;
   if (rootSel) rootSel.value = preset.root;
   retune(preset.root, preset.scale);
-  // Marca o preset atual no seletor.
+  // Aplicar um preset DESCARTA as alterações: vira o preset selecionado,
+  // esconde a entrada "✎ Não salvo" e marca o seletor no preset real.
+  selectedPresetId = (id === UNSAVED_ID) ? selectedPresetId : id;
   const presetSel = document.getElementById('ctrl-preset');
-  if (presetSel) presetSel.value = id;
+  if (presetSel) {
+    const unsaved = presetSel.querySelector(`option[value="${UNSAVED_ID}"]`);
+    if (unsaved) unsaved.hidden = true;
+    presetSel.value = selectedPresetId;
+  }
 }
 
 // (Re)popula o seletor com presets de fábrica + vibes do usuário na MESMA
@@ -908,16 +921,22 @@ function applyPreset(id) {
 function populatePresetControl(keepId) {
   const sel = document.getElementById('ctrl-preset');
   if (!sel) return;
-  const previous = keepId || sel.value || DEFAULT_PRESET_ID;
+  const previous = keepId || selectedPresetId || DEFAULT_PRESET_ID;
   sel.innerHTML = '';
+
+  // Entrada especial, escondida até existir alteração não salva. Fica no topo
+  // para aparecer já selecionada quando o estado diverge de um preset.
+  const unsaved = document.createElement('option');
+  unsaved.value = UNSAVED_ID;
+  unsaved.textContent = '✎ Não salvo';
+  unsaved.hidden = true;
+  sel.appendChild(unsaved);
 
   const factoryGroup = document.createElement('optgroup');
   factoryGroup.label = 'De fábrica';
   FACTORY_PRESETS.forEach((p) => {
     const opt = document.createElement('option');
     opt.value = p.id;
-    opt.dataset.name = p.label;   // nome base (sem prefixo)
-    opt.dataset.prefix = '';      // de fábrica: sem prefixo natural
     opt.textContent = p.label;
     factoryGroup.appendChild(opt);
   });
@@ -928,30 +947,22 @@ function populatePresetControl(keepId) {
     userGroup.label = 'Minhas vibes';
     userPresets.forEach((p, i) => {
       const opt = document.createElement('option');
-      const name = p.name || p.label || 'Vibe ' + (i + 1);
       opt.value = `user:${i}`;
-      opt.dataset.name = name;
-      opt.dataset.prefix = '';   // sem prefixo (o grupo "Minhas vibes" já indica)
-      opt.textContent = name;
+      opt.textContent = p.name || p.label || 'Vibe ' + (i + 1);
       userGroup.appendChild(opt);
     });
     sel.appendChild(userGroup);
   }
 
-  // Restaura a seleção se ainda existir; senão cai no default.
   sel.value = previous;
   if (!sel.value) sel.value = DEFAULT_PRESET_ID;
+  selectedPresetId = sel.value;
   updateDeleteButton();
-  refreshModifiedIndicator();
 }
 
-// Compara o estado atual dos controles com o preset selecionado. Se divergir,
-// marca a opção selecionada com '● ' (no início do nome) e acende o realce do
-// seletor (verde mais claro). Se bater, restaura o prefixo natural.
+// O estado atual difere do preset realmente selecionado?
 function isStateModified() {
-  const sel = document.getElementById('ctrl-preset');
-  if (!sel) return false;
-  const preset = presetById(sel.value);
+  const preset = presetById(selectedPresetId);
   const cur = readCurrentVibe();
   for (const field of Object.keys(PRESET_SLIDER)) {
     if (Number(cur[field]) !== Number(preset[field])) return true;
@@ -961,16 +972,16 @@ function isStateModified() {
   return false;
 }
 
+// Mostra/esconde a entrada "✎ Não salvo" conforme o estado diverge do preset.
+// Nunca suja o nome dos presets — só alterna para a entrada especial.
 function refreshModifiedIndicator() {
   const sel = document.getElementById('ctrl-preset');
   if (!sel) return;
-  const opt = sel.selectedOptions && sel.selectedOptions[0];
-  if (!opt) return;
-  const base = opt.dataset.name || opt.textContent;
-  const prefix = opt.dataset.prefix || '';
+  const unsaved = sel.querySelector(`option[value="${UNSAVED_ID}"]`);
   const modified = isStateModified();
-  opt.textContent = modified ? `● ${base}` : `${prefix}${base}`;
-  sel.classList.toggle('modified', modified);
+  if (unsaved) unsaved.hidden = !modified;
+  // Quando modificado, mostra "✎ Não salvo"; senão, volta ao preset real.
+  sel.value = modified ? UNSAVED_ID : selectedPresetId;
 }
 
 // Mostra o botão Apagar só quando uma vibe do USUÁRIO está selecionada.
@@ -1013,8 +1024,9 @@ function saveWorkState() {
   saveWorkTimer = setTimeout(() => {
     try {
       const state = readCurrentVibe();
-      const presetSel = document.getElementById('ctrl-preset');
-      state.presetId = presetSel ? presetSel.value : DEFAULT_PRESET_ID;
+      // Guarda o PRESET REAL de referência (não '__unsaved__'), para saber de
+      // qual preset o estado diverge ao restaurar.
+      state.presetId = selectedPresetId || DEFAULT_PRESET_ID;
       localStorage.setItem(WORKSTATE_KEY, JSON.stringify(state));
     } catch { /* armazenamento indisponível */ }
   }, 250);
@@ -1048,8 +1060,11 @@ function applyWorkState(state) {
   if (scaleSel && state.scale) scaleSel.value = state.scale;
   if (rootSel && state.root) rootSel.value = state.root;
   if (state.scale && state.root) retune(state.root, state.scale);
+  // Define o preset real de referência; refreshModifiedIndicator (chamado no
+  // load) decide se mostra "✎ Não salvo" caso o estado restaurado divirja.
+  if (state.presetId && state.presetId !== UNSAVED_ID) selectedPresetId = state.presetId;
   const presetSel = document.getElementById('ctrl-preset');
-  if (presetSel && state.presetId) presetSel.value = state.presetId;
+  if (presetSel) presetSel.value = selectedPresetId;
 }
 
 // Popula os <select> de escala e nota base e marca os valores atuais.
