@@ -222,7 +222,7 @@ const FACTORY_PRESETS = [
     // o timbre sci-fi; sustain 100% (soa enquanto pressionado), release curto.
     id: 'laser-shot', label: 'Laser Shot (PEW)',
     wave1: 'sawtooth', wave2: 'sawtooth',
-    glide: 5, cutoff: 6.0, res: 6.0, chorus: 0.0, interval: 0, sweep: 12, sweeptime: 20,
+    glide: 5, cutoff: 6.0, res: 6.0, chorus: 0.0, interval: 0, sweep: 30, sweeptime: 120,
     osc2: 1.0, attack: 1, decay: 2000, sustain: 1.0, release: 100,
     scale: 'penta-menor', root: 'G2'
   }
@@ -310,9 +310,12 @@ class LaserVoice {
     const f2Target = Tone.Frequency(note)
       .transpose(this.osc2Semitones)
       .toFrequency();
-    const f2Start = Tone.Frequency(note)
+    // Partida do OSC2 clampada num teto seguro: com sweep grande (até 36
+    // semitons) numa nota aguda, a frequência inicial poderia passar do
+    // Nyquist e glitchar.
+    const f2Start = Math.min(18000, Tone.Frequency(note)
       .transpose(this.osc2Semitones + this.sweepSemitones)
-      .toFrequency();
+      .toFrequency());
 
     // OSC1: glide suave até a fundamental.
     this.osc1.frequency.setValueAtTime(this.osc1.frequency.value, time);
@@ -571,7 +574,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29af';
+const JS_VERSION = '2026-10-31a';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
