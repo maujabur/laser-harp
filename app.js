@@ -612,7 +612,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-31b';
+const JS_VERSION = '2026-10-31c';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -1510,12 +1510,20 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (e.repeat) return;
-  // Ignora teclas de nota quando o foco está num campo de formulário (ex.: o
-  // <select> de escala/nota). Senão, apertar "C" com o select focado o faz
-  // pular entre opções C2, C3... em vez de tocar.
-  if (typingInField()) return;
   const index = CODE_TO_INDEX.get(e.code);
+  // Tecla que NÃO é de nota (ex.: setas, letras navegando um select): se o
+  // foco está num campo, deixa o campo tratar (não interferimos).
   if (index === undefined) return;
+  // Num campo de TEXTO (ex.: nome da vibe), a tecla é digitação — não toca.
+  const active = document.activeElement;
+  if (active && active.tagName === 'INPUT' && active.type === 'text') return;
+  if (active && active.tagName === 'TEXTAREA') return;
+  // Tecla de NOTA vence um <select> focado: se o dropdown (preset/escala/nota)
+  // ficou com o foco e por isso travava a tocada, tiramos o foco e seguimos
+  // para tocar — resolve o dropdown de preset que ficava preso.
+  if (active && active.tagName === 'SELECT' && typeof active.blur === 'function') {
+    active.blur();
+  }
   // ESTADO "dormindo": 1ª tecla só acorda o áudio (sem preventDefault, para
   // não invalidar o gesto; não soa ainda).
   if (!isStarted) { wakeAudio(); return; }
