@@ -215,6 +215,16 @@ const FACTORY_PRESETS = [
     glide: 35, cutoff: 8.0, res: 3.6, chorus: 0.05, interval: 31, sweep: 0, sweeptime: 40,
     osc2: 1.0, attack: 10, decay: 400, sustain: 0.55, release: 500,
     scale: 'penta-menor', root: 'C2'
+  },
+  {
+    // "PEW!" de tiro de laser: OSC2 despenca no ataque (sweep máximo, rápido)
+    // sobre uma fundamental sustentada; dente de serra + ressonância alta para
+    // o timbre sci-fi; sustain 100% (soa enquanto pressionado), release curto.
+    id: 'laser-shot', label: 'Laser Shot (PEW)',
+    wave1: 'sawtooth', wave2: 'sawtooth',
+    glide: 5, cutoff: 6.0, res: 6.0, chorus: 0.0, interval: 0, sweep: 12, sweeptime: 20,
+    osc2: 1.0, attack: 1, decay: 2000, sustain: 1.0, release: 100,
+    scale: 'penta-menor', root: 'G2'
   }
 ];
 const DEFAULT_PRESET_ID = 'harpa-classica';
@@ -561,7 +571,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-29ae';
+const JS_VERSION = '2026-10-29af';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
