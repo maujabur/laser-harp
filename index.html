@@ -6,7 +6,7 @@
   <meta name="author" content="Mauricio Jabur — MauMaker">
   <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
   <meta name="generator" content="Kiro">
-  <meta name="html-version" content="2026-10-31c">
+  <meta name="html-version" content="2026-10-31d">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -223,7 +223,9 @@
     .credits .sep { opacity: 0.6; }
     .keys-container { width: 100%; touch-action: none; }
     @media (min-width: 900px) {
-      .keys-container { max-width: 1280px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+      /* --key-count é definido em JS a partir das teclas efetivas (URL); cai
+         em 12 se não vier, preservando o layout padrão. */
+      .keys-container { max-width: 1280px; display: grid; grid-template-columns: repeat(var(--key-count, 12), minmax(0, 1fr)); }
       .key-box { min-width: 0; padding: 15px 6px; }
     }
     .key-box { flex: 1 1 72px; min-height: 76px; display: flex; flex-direction: column; justify-content: center; }
@@ -398,6 +400,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-31c" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-31d" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>

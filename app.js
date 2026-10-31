@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 // 1. ESCALAS disponíveis — descritas por INTERVALOS em semitons dentro de
-//    uma oitava (0 = a própria nota base). As 12 teclas são preenchidas
+//    uma oitava (0 = a própria nota base). As teclas são preenchidas
 //    subindo: quando a escala acaba, continua na oitava seguinte.
 //
 //    O espírito aqui é "difícil tocar errado": as escalas padrão são
@@ -35,10 +35,50 @@ function toFlat(note) {
   return note.replace(/^([A-G]#)/, (_, pc) => SHARP_TO_FLAT[pc]);
 }
 
-// Gera as 12 notas a partir da nota base e dos intervalos da escala,
-// subindo oitava a oitava. Reaproveita Tone.Frequency().transpose(), já
-// usado no sweep do OSC2.
-const KEY_COUNT = 12;
+// 3b. CONFIGURAÇÃO POR URL (opcional) — número de teclas e de vozes.
+//
+//   ?teclas=10        -> usa só 10 teclas (menos osciladores alocados)
+//   ?vozes=8          -> limita a polifonia a 8 vozes
+//   ?teclas=10&vozes=6
+//
+//   Também aceitamos apelidos em inglês (keys/voices). Valores inválidos ou
+//   ausentes caem no padrão. Se pedirem MAIS do que o máximo possível, fica no
+//   máximo (teclas: limitado pela tabela KEYS física abaixo; vozes: idem).
+//   Aliases antes de KEYS por causa da TDZ de const: por isso usamos o
+//   tamanho fixo MAX_KEYS declarado aqui e validado contra KEYS mais adiante.
+const MAX_KEYS = 12;   // máximo de teclas físicas (ver tabela KEYS)
+const MAX_VOICES = 12; // teto de polifonia (osciladores = 2 × vozes)
+
+function readUrlInt(names) {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    for (const name of names) {
+      const raw = params.get(name);
+      if (raw === null) continue;
+      const n = parseInt(raw, 10);
+      if (Number.isFinite(n)) return n;
+    }
+  } catch { /* URL indisponível: usa padrão */ }
+  return null;
+}
+
+// Nº de teclas pedido na URL, limitado a [1, MAX_KEYS]. Sem parâmetro => MAX.
+const requestedKeys = readUrlInt(['teclas', 'keys']);
+const KEY_COUNT = requestedKeys === null
+  ? MAX_KEYS
+  : Math.max(1, Math.min(MAX_KEYS, requestedKeys));
+
+// Nº de vozes (polifonia) pedido na URL, limitado a [1, MAX_VOICES]. Sem
+// parâmetro, o padrão acompanha a quantidade de teclas — assim, menos teclas
+// já significam menos osciladores alocados sem precisar do 2º parâmetro.
+const requestedVoices = readUrlInt(['vozes', 'voices']);
+const VOICE_COUNT = requestedVoices === null
+  ? KEY_COUNT
+  : Math.max(1, Math.min(MAX_VOICES, requestedVoices));
+
+// Gera as notas a partir da nota base e dos intervalos da escala, subindo
+// oitava a oitava. Reaproveita Tone.Frequency().transpose(), já usado no sweep
+// do OSC2. O número de notas vem de KEY_COUNT (configurável pela URL).
 function buildNotes(rootNote, scaleIntervals) {
   const perOctave = scaleIntervals.length;
   const notes = [];
@@ -79,7 +119,10 @@ function scaleById(id) {
   return SCALES.find(s => s.id === id) || SCALES[0];
 }
 
-const KEY_MAP = KEYS.map((key, i) => ({
+// Só as KEY_COUNT primeiras teclas físicas entram no mapa (o resto fica
+// inativo). KEYS.length é o teto real; KEY_COUNT já vem clampado em MAX_KEYS,
+// que deve bater com a tabela — slice protege caso alguém mexa só num lado.
+const KEY_MAP = KEYS.slice(0, KEY_COUNT).map((key, i) => ({
   code: key.code,
   label: key.label,
   note: null // preenchido por applyScale()
@@ -88,7 +131,7 @@ const KEY_MAP = KEYS.map((key, i) => ({
 // Busca rápida por código de tecla física -> índice no KEY_MAP.
 const CODE_TO_INDEX = new Map(KEY_MAP.map((entry, i) => [entry.code, i]));
 
-// Recalcula as 12 notas e atualiza o KEY_MAP + os rótulos na tela, sem
+// Recalcula as notas (KEY_COUNT) e atualiza o KEY_MAP + os rótulos na tela, sem
 // recriar as teclas (os listeners continuam válidos).
 function applyScale(rootNote = currentRoot, scaleId = currentScaleId) {
   currentRoot = rootNote;
@@ -612,7 +655,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-31c';
+const JS_VERSION = '2026-10-31d';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -624,7 +667,10 @@ function setAudioStatus(message, error = false) {
 // Linha de versão SEMPRE visível (não some com o status do áudio). Mostra as
 // versões de HTML e JS para diagnosticar cache do GitHub Pages de relance.
 const versionLine = document.getElementById('version-line');
-if (versionLine) versionLine.textContent = `HTML v${HTML_VERSION} · JS v${JS_VERSION}`;
+if (versionLine) {
+  versionLine.textContent =
+    `HTML v${HTML_VERSION} · JS v${JS_VERSION} · ${KEY_COUNT} teclas · ${VOICE_COUNT} vozes`;
+}
 
 audioButton.addEventListener('click', () => { setAudioStatus('Iniciando áudio…'); wakeAudio(); });
 setAudioStatus('Toque no botão ou numa tecla para ativar o áudio');
@@ -634,6 +680,9 @@ setMasterVolume(masterVolume);
 
 // UI: Renderizar teclas
 const keysContainer = document.getElementById('keyboard');
+// Informa ao CSS quantas colunas usar no grid de tela larga (>=900px), para
+// não sobrar espaço vazio quando há menos de 12 teclas.
+keysContainer.style.setProperty('--key-count', String(KEY_COUNT));
 KEY_MAP.forEach((data, index) => {
   const el = document.createElement('div');
   el.className = 'key-box';
@@ -799,8 +848,9 @@ async function initAudio() {
     max: PRESET.osc2Width + PRESET.pwmLfoDepth
   }).start();
 
-  // Instrumento dual-oscilador (modelagem Preset 46 Synthex).
-  harp = new LaserHarp(inputGain, pwmLfo, 12);
+  // Instrumento dual-oscilador (modelagem Preset 46 Synthex). A polifonia vem
+  // de VOICE_COUNT (configurável pela URL) — menos vozes, menos osciladores.
+  harp = new LaserHarp(inputGain, pwmLfo, VOICE_COUNT);
 
   isStarted = true;
   isStarting = false;
@@ -1023,7 +1073,7 @@ function applyPreset(id) {
   if (wave1Sel) { wave1Sel.value = preset.wave1; harp?.setWaveform('osc1', preset.wave1); }
   if (wave2Sel) { wave2Sel.value = preset.wave2; harp?.setWaveform('osc2', preset.wave2); }
 
-  // Escala + nota base (reafina as 12 teclas com segurança).
+  // Escala + nota base (reafina as teclas com segurança).
   const scaleSel = document.getElementById('ctrl-scale');
   const rootSel = document.getElementById('ctrl-root');
   if (scaleSel) scaleSel.value = preset.scale;
@@ -1447,7 +1497,7 @@ function updateNote(index) {
 
 // Troca de escala/nota base com segurança: solta todas as notas que estiverem
 // soando (senão o keyup usaria a nota NOVA e não acharia a antiga no pool),
-// reafina as 12 teclas e limpa o destaque visual.
+// reafina as teclas e limpa o destaque visual.
 function retune(rootNote = currentRoot, scaleId = currentScaleId) {
   if (harp) {
     const held = new Set([...activeKeys, ...activePointers.values()]);

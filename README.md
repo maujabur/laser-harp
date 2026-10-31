@@ -16,8 +16,10 @@ roda leve até no navegador de um Raspberry Pi.
 
 ## O que ela faz
 
-- **12 teclas** (combinando com harpas físicas de 10 e 12 feixes), tocáveis
-  pelo teclado do computador (Z X C V B N M , . / A S) ou por toque/mouse.
+- **Até 12 teclas** (combinando com harpas físicas de 10 e 12 feixes),
+  tocáveis pelo teclado do computador (Z X C V B N M , . / A S) ou por
+  toque/mouse. O número de teclas e de vozes é
+  [configurável pela URL](#teclas-e-vozes-pela-url).
 - **Escalas "perdoadoras"** — pentatônicas por padrão, para que qualquer
   combinação de notas soe bem mesmo para quem não é músico. Maior e dórico
   como tempero.
@@ -41,6 +43,34 @@ roda leve até no navegador de um Raspberry Pi.
 2. A partir daí, toque nas teclas na tela ou use o teclado do computador.
 3. Abra **"Ajustes do sintetizador"** para moldar o som, ou escolha um
    **Preset (vibe)** no topo.
+
+## Teclas e vozes pela URL
+
+Por padrão a harpa abre com o máximo: **12 teclas** e **12 vozes** de
+polifonia. Você pode pedir menos pela URL — útil para aliviar máquinas mais
+modestas (menos teclas e vozes = menos osciladores alocados):
+
+| Parâmetro | Apelido em inglês | O que faz |
+|-----------|-------------------|-----------|
+| `teclas`  | `keys`            | Número de teclas (1 a 12) |
+| `vozes`   | `voices`          | Número de vozes / polifonia (1 a 12) |
+
+Exemplos:
+
+```
+?teclas=10            # 10 teclas; vozes acompanham (10)
+?teclas=10&vozes=6    # 10 teclas e 6 vozes
+?vozes=4              # 12 teclas, mas só 4 vozes simultâneas
+```
+
+Regras:
+
+- Sem parâmetro, fica no **máximo possível** (12).
+- Pedir **mais** que o máximo também fica no máximo — nunca quebra.
+- Se você escolher só `teclas`, as **vozes acompanham** o número de teclas; se
+  escolher só `vozes`, as teclas ficam no máximo.
+- O número **efetivamente em uso** aparece na linha de versão, no topo da
+  página (ex.: `… · 10 teclas · 6 vozes`), ao lado das versões de HTML e JS.
 
 ## Presets e vibes
 
