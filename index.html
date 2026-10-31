@@ -6,7 +6,7 @@
   <meta name="author" content="Mauricio Jabur — MauMaker">
   <meta name="description" content="Harpa Laser — instrumento web de síntese de áudio por Mauricio Jabur (MauMaker), construído com Kiro.">
   <meta name="generator" content="Kiro">
-  <meta name="html-version" content="2026-10-31a">
+  <meta name="html-version" content="2026-10-31b">
   <title>Harpa Laser</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
   <style>
@@ -336,8 +336,18 @@
     </div>
 
     <div class="control-group">
-      <label>Sweep Tempo (ms): <span id="val-sweeptime">40</span></label>
+      <label>Sweep OSC2 Tempo (ms): <span id="val-sweeptime">40</span></label>
       <input type="range" id="ctrl-sweeptime" min="20" max="400" step="5" value="40">
+    </div>
+
+    <div class="control-group">
+      <label>Sweep OSC1 (semitons): <span id="val-sweep1">0</span></label>
+      <input type="range" id="ctrl-sweep1" min="0" max="36" step="0.5" value="0">
+    </div>
+
+    <div class="control-group">
+      <label>Sweep OSC1 Tempo (ms): <span id="val-sweeptime1">120</span></label>
+      <input type="range" id="ctrl-sweeptime1" min="20" max="400" step="5" value="120">
     </div>
 
     <div class="control-group">
@@ -388,6 +398,6 @@
       if (el) { el.textContent = 'Erro de JavaScript: ' + (event.message || 'falha ao carregar script'); el.style.color = '#ff9292'; }
     });
   </script>
-  <script src="app.js?v=2026-10-31a" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
+  <script src="app.js?v=2026-10-31b" onerror="document.getElementById('audio-status').textContent='Erro: não foi possível carregar app.js'"></script>
 </body>
 </html>

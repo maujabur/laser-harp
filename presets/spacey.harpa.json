@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "glide": 5,
+  "cutoff": 6,
+  "res": 6,
+  "chorus": 0.53,
+  "sweep": 35.5,
+  "sweeptime": 215,
+  "sweep1": 0,
+  "sweeptime1": 120,
+  "interval": 0,
+  "osc2": 1,
+  "attack": 1,
+  "decay": 2000,
+  "sustain": 1,
+  "release": 100,
+  "wave1": "sawtooth",
+  "wave2": "sawtooth",
+  "scale": "penta-menor",
+  "root": "G2",
+  "name": "Spacey"
+}

@@ -6,6 +6,8 @@
   "chorus": 0.4,
   "sweep": 0.5,
   "sweeptime": 100,
+  "sweep1": 0,
+  "sweeptime1": 120,
   "interval": 19,
   "osc2": 0.45,
   "attack": 800,

@@ -127,6 +127,11 @@ const PRESET = {
   osc2SweepSemitones: 1,
   osc2SweepTime: 0.04,     // segundos (o glide descendente do OSC2)
 
+  // "Pitch sweep" do OSC1 (0 = sem sweep, só glide — comportamento padrão).
+  // Quando > 0, o OSC1 também despenca no ataque (PEW nos dois osciladores).
+  osc1SweepSemitones: 0,
+  osc1SweepTime: 0.12,     // segundos
+
   // Mistura dos dois osciladores (ganho relativo).
   osc1Level: 0.55,
   osc2Level: 0.26,
@@ -176,6 +181,7 @@ const FACTORY_PRESETS = [
     id: 'harpa-classica', label: 'Harpa Clássica',
     wave1: 'pulse', wave2: 'pulse',
     glide: 35, cutoff: 4.0, res: 3.6, chorus: 0.05, interval: 31, sweep: 1, sweeptime: 40,
+    sweep1: 0, sweeptime1: 120,
     osc2: 0.26, attack: 10, decay: 400, sustain: 0.55, release: 500,
     scale: 'penta-menor', root: 'C2'
   },
@@ -183,6 +189,7 @@ const FACTORY_PRESETS = [
     id: 'pad-etereo', label: 'Pad Etéreo',
     wave1: 'sawtooth', wave2: 'triangle',
     glide: 120, cutoff: 3.2, res: 1.5, chorus: 0.35, interval: 12, sweep: 0.5, sweeptime: 80,
+    sweep1: 0, sweeptime1: 120,
     osc2: 0.4, attack: 600, decay: 800, sustain: 0.8, release: 1800,
     scale: 'penta-maior', root: 'C2'
   },
@@ -190,6 +197,7 @@ const FACTORY_PRESETS = [
     id: 'pluck-curto', label: 'Pluck Curto',
     wave1: 'square', wave2: 'pulse',
     glide: 10, cutoff: 5.5, res: 2.5, chorus: 0.08, interval: 19, sweep: 2, sweeptime: 30,
+    sweep1: 0, sweeptime1: 120,
     osc2: 0.3, attack: 3, decay: 220, sustain: 0.0, release: 180,
     scale: 'penta-menor', root: 'D2'
   },
@@ -197,6 +205,7 @@ const FACTORY_PRESETS = [
     id: 'drone-profundo', label: 'Drone Profundo',
     wave1: 'sawtooth', wave2: 'sawtooth',
     glide: 90, cutoff: 3.2, res: 4.5, chorus: 0.2, interval: 12, sweep: 1, sweeptime: 60,
+    sweep1: 0, sweeptime1: 120,
     osc2: 0.5, attack: 200, decay: 600, sustain: 0.9, release: 1400,
     scale: 'penta-menor', root: 'G1'
   },
@@ -204,6 +213,7 @@ const FACTORY_PRESETS = [
     id: 'sino-cristalino', label: 'Sino Cristalino',
     wave1: 'sine', wave2: 'triangle',
     glide: 15, cutoff: 7.0, res: 1.0, chorus: 0.12, interval: 24, sweep: 0.5, sweeptime: 40,
+    sweep1: 0, sweeptime1: 120,
     osc2: 0.35, attack: 4, decay: 900, sustain: 0.15, release: 700,
     scale: 'penta-maior', root: 'G2'
   },
@@ -213,6 +223,7 @@ const FACTORY_PRESETS = [
     id: 'oriental', label: 'Oriental',
     wave1: 'sine', wave2: 'pulse',
     glide: 35, cutoff: 8.0, res: 3.6, chorus: 0.05, interval: 31, sweep: 0, sweeptime: 40,
+    sweep1: 0, sweeptime1: 120,
     osc2: 1.0, attack: 10, decay: 400, sustain: 0.55, release: 500,
     scale: 'penta-menor', root: 'C2'
   },
@@ -223,6 +234,7 @@ const FACTORY_PRESETS = [
     id: 'laser-shot', label: 'Laser Shot (PEW)',
     wave1: 'sawtooth', wave2: 'sawtooth',
     glide: 5, cutoff: 6.0, res: 6.0, chorus: 0.0, interval: 0, sweep: 30, sweeptime: 120,
+    sweep1: 30, sweeptime1: 320,
     osc2: 1.0, attack: 1, decay: 2000, sustain: 1.0, release: 100,
     scale: 'penta-menor', root: 'G2'
   }
@@ -287,8 +299,10 @@ class LaserVoice {
     // Parâmetros ajustáveis em tempo real (valem a partir da próxima nota).
     this.portamento = PRESET.portamento;
     this.osc2Semitones = PRESET.osc2Semitones;
-    this.sweepSemitones = PRESET.osc2SweepSemitones;
-    this.sweepTime = PRESET.osc2SweepTime;
+    this.sweepSemitones = PRESET.osc2SweepSemitones;   // sweep do OSC2 (semitons)
+    this.sweepTime = PRESET.osc2SweepTime;             // tempo do sweep do OSC2
+    this.sweep1Semitones = PRESET.osc1SweepSemitones;  // sweep do OSC1 (0 = só glide)
+    this.sweep1Time = PRESET.osc1SweepTime;            // tempo do sweep do OSC1
     this.filterKeyTrack = PRESET.filter.keyTrack; // múltiplo da freq. da nota
 
     this.busy = false;
@@ -317,11 +331,18 @@ class LaserVoice {
       .transpose(this.osc2Semitones + this.sweepSemitones)
       .toFrequency());
 
-    // OSC1: glide suave até a fundamental.
+    // OSC1: se tem sweep (>0), parte acima da nota e "despenca" (PEW nos dois
+    // osciladores). Se sweep1 = 0, mantém o glide suave de sempre.
     this.osc1.frequency.setValueAtTime(this.osc1.frequency.value, time);
-    this.osc1.frequency.exponentialRampToValueAtTime(
-      f1, time + this.portamento
-    );
+    if (this.sweep1Semitones > 0) {
+      const f1Start = Math.min(18000, Tone.Frequency(note)
+        .transpose(this.sweep1Semitones)
+        .toFrequency());
+      this.osc1.frequency.setValueAtTime(f1Start, time);
+      this.osc1.frequency.exponentialRampToValueAtTime(f1, time + this.sweep1Time);
+    } else {
+      this.osc1.frequency.exponentialRampToValueAtTime(f1, time + this.portamento);
+    }
 
     // OSC2: começa acima do alvo e "escorrega" para baixo => poinnn.
     this.osc2.frequency.setValueAtTime(f2Start, time);
@@ -365,6 +386,14 @@ class LaserVoice {
 
   setSweepTime(seconds) {
     this.sweepTime = seconds;
+  }
+
+  setSweep1Semitones(semitones) {
+    this.sweep1Semitones = semitones;
+  }
+
+  setSweep1Time(seconds) {
+    this.sweep1Time = seconds;
   }
 
   // Intervalo base do OSC2 acima da nota (semitons). Vale da próxima nota.
@@ -503,6 +532,14 @@ class LaserHarp {
     this.voices.forEach(v => v.setSweepTime(seconds));
   }
 
+  setSweep1Semitones(semitones) {
+    this.voices.forEach(v => v.setSweep1Semitones(semitones));
+  }
+
+  setSweep1Time(seconds) {
+    this.voices.forEach(v => v.setSweep1Time(seconds));
+  }
+
   setOsc2Level(level) {
     this.voices.forEach(v => v.setOsc2Level(level));
   }
@@ -539,6 +576,7 @@ const VIBE_VERSION = 1;
 const PRESET_SLIDER = {
   glide: 'ctrl-glide', cutoff: 'ctrl-cutoff', res: 'ctrl-res',
   chorus: 'ctrl-chorus', sweep: 'ctrl-sweep', sweeptime: 'ctrl-sweeptime',
+  sweep1: 'ctrl-sweep1', sweeptime1: 'ctrl-sweeptime1',
   interval: 'ctrl-interval', osc2: 'ctrl-osc2', attack: 'ctrl-attack',
   decay: 'ctrl-decay', sustain: 'ctrl-sustain', release: 'ctrl-release'
 };
@@ -574,7 +612,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-31a';
+const JS_VERSION = '2026-10-31b';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -832,6 +870,20 @@ function bindControls() {
     harp?.setSweepTime(val / 1000);
   });
 
+  // Sweep OSC1 — semitons (0 = só glide; >0 faz o OSC1 despencar também)
+  document.getElementById('ctrl-sweep1').addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    document.getElementById('val-sweep1').innerText = val;
+    harp?.setSweep1Semitones(val);
+  });
+
+  // Sweep OSC1 — tempo (ms -> segundos)
+  document.getElementById('ctrl-sweeptime1').addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    document.getElementById('val-sweeptime1').innerText = val;
+    harp?.setSweep1Time(val / 1000);
+  });
+
   // Mix OSC2 — presença do segundo oscilador
   document.getElementById('ctrl-osc2').addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
@@ -882,6 +934,8 @@ function applyControlValues() {
   chorus.wet.rampTo(num('ctrl-chorus'), 0.05);
   harp.setSweepSemitones(num('ctrl-sweep'));
   harp.setSweepTime(num('ctrl-sweeptime') / 1000);
+  harp.setSweep1Semitones(num('ctrl-sweep1'));
+  harp.setSweep1Time(num('ctrl-sweeptime1') / 1000);
   harp.setOsc2Semitones(num('ctrl-interval'));
   harp.setOsc2Level(num('ctrl-osc2'));
   harp.setEnvelope('attack', num('ctrl-attack') / 1000);
@@ -948,10 +1002,18 @@ function presetById(id) {
 // (rótulo + áudio), e reafina a escala/nota base. Também marca os selects.
 function applyPreset(id) {
   const preset = presetById(id);
+  // Defaults para campos que um preset pode não declarar (ex.: sweep1/
+  // sweeptime1, novos). Evita que o valor do preset anterior "vaze".
+  const defaults = {
+    sweep1: 0, sweeptime1: Math.round(PRESET.osc1SweepTime * 1000)
+  };
   for (const [field, sliderId] of Object.entries(PRESET_SLIDER)) {
     const el = document.getElementById(sliderId);
-    if (el && preset[field] !== undefined) {
-      el.value = String(preset[field]);
+    if (!el) continue;
+    const value = preset[field] !== undefined ? preset[field]
+      : (defaults[field] !== undefined ? defaults[field] : undefined);
+    if (value !== undefined) {
+      el.value = String(value);
       el.dispatchEvent(new Event('input', { bubbles: true }));
     }
   }
@@ -1117,8 +1179,11 @@ function normalizeNumericField(sliderId, value, fallback) {
   const el = document.getElementById(sliderId);
   let n = Number(value);
   if (!Number.isFinite(n)) n = Number(fallback);
-  if (!el) return n;
+  if (!el) return Number.isFinite(n) ? n : 0;
   const min = parseFloat(el.min), max = parseFloat(el.max), step = parseFloat(el.step) || 1;
+  // Último recurso: valor ainda inválido (ex.: campo novo ausente no preset
+  // base) cai no mínimo do slider.
+  if (!Number.isFinite(n)) n = Number.isFinite(min) ? min : 0;
   if (Number.isFinite(min)) n = Math.max(min, n);
   if (Number.isFinite(max)) n = Math.min(max, n);
   if (Number.isFinite(step) && Number.isFinite(min)) {
