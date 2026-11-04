@@ -347,6 +347,8 @@ class LaserVoice {
     this.sweep1Semitones = PRESET.osc1SweepSemitones;  // sweep do OSC1 (0 = só glide)
     this.sweep1Time = PRESET.osc1SweepTime;            // tempo do sweep do OSC1
     this.filterKeyTrack = PRESET.filter.keyTrack; // múltiplo da freq. da nota
+    this.f1 = 0;          // fundamental da nota atual (0 = nenhuma ainda)
+    this.expression = 1;  // multiplicador do cutoff (1 = neutro; distância da mão)
 
     this.busy = false;
     this.note = null;
@@ -362,6 +364,11 @@ class LaserVoice {
     this.availableAt = Infinity;
     this.startedAt = time;
     this.note = note;
+    // Cada nota nova começa com expressão NEUTRA (1×). Sem isso, uma voz
+    // reaproveitada herdaria o brilho da mão da nota anterior (vaza expressão
+    // entre cordas no voice stealing). O poly aftertouch que chegar depois
+    // reajusta.
+    this.expression = 1;
 
     const f1 = Tone.Frequency(note).toFrequency();
     const f2Target = Tone.Frequency(note)
@@ -393,21 +400,46 @@ class LaserVoice {
       f2Target, time + this.sweepTime
     );
 
-    // Filtro (key tracking): cutoff = fator × frequência da nota. Desliza
-    // junto com o glide. Clamp num teto seguro para não passar do Nyquist
-    // em notas agudas com fator alto.
-    const cutoff = Math.min(18000, Math.max(20, this.filterKeyTrack * f1));
-    this.filter.frequency.setValueAtTime(this.filter.frequency.value, time);
-    this.filter.frequency.exponentialRampToValueAtTime(
-      cutoff, time + this.portamento
-    );
+    // Guarda a fundamental da nota: o cutoff é derivado dela (key tracking),
+    // então precisamos dela para recalcular o filtro em TEMPO REAL quando o
+    // slider de cutoff ou a expressão (distância da mão) mudam com a nota ainda
+    // soando — sem isso, só dava para aplicar o filtro no ataque.
+    this.f1 = f1;
 
-    // Compensação de ganho desliza junto com o filtro.
-    const comp = filterCompensation(this.filterKeyTrack);
-    this.comp.gain.setValueAtTime(this.comp.gain.value, time);
-    this.comp.gain.linearRampToValueAtTime(comp, time + this.portamento);
+    // Filtro (key tracking): cutoff = fator × frequência da nota. Desliza
+    // junto com o glide (rampa = portamento).
+    this.applyFilter(time, this.portamento);
 
     this.amp.triggerAttack(time);
+  }
+
+  // Calcula e aplica o cutoff do filtro (+ compensação de ganho) a partir do
+  // estado atual: fundamental da nota (f1), fator de key tracking e expressão.
+  // Chamado no ataque (rampa = portamento) e em tempo real quando o slider de
+  // filtro ou a expressão mudam (rampa curta). Sem f1 (nenhuma nota ainda), não
+  // faz nada.
+  applyFilter(time = Tone.now(), ramp = 0.03) {
+    // Só recalcula se a voz tem uma nota (f1) E está em uso. Vozes livres (ou
+    // que já tocaram e mantêm f1 antigo) seriam recálculo à toa — pesado ao
+    // arrastar o slider de filtro com muitas vozes, e causa de "sumidas" no
+    // áudio. O próximo attack dessas vozes reaplica o filtro de qualquer modo.
+    if (!this.f1 || !this.busy) return;
+    // Fator efetivo = key tracking do slider × multiplicador da expressão
+    // (distância da mão). Expressão neutra (1.0) deixa o cutoff no valor do
+    // slider; >1 abre o filtro (mais brilho), <1 fecha.
+    const factor = this.filterKeyTrack * this.expression;
+    // Clamp num teto seguro para não passar do Nyquist em notas agudas com
+    // fator alto; piso de 20 Hz.
+    const cutoff = Math.min(18000, Math.max(20, factor * this.f1));
+    this.filter.frequency.cancelScheduledValues(time);
+    this.filter.frequency.setValueAtTime(this.filter.frequency.value, time);
+    this.filter.frequency.exponentialRampToValueAtTime(cutoff, time + ramp);
+
+    // Compensação de ganho desliza junto com o filtro (mesma rampa).
+    const comp = filterCompensation(factor);
+    this.comp.gain.cancelScheduledValues(time);
+    this.comp.gain.setValueAtTime(this.comp.gain.value, time);
+    this.comp.gain.linearRampToValueAtTime(comp, time + ramp);
   }
 
   release(time = Tone.now()) {
@@ -477,9 +509,20 @@ class LaserVoice {
     if (which === 'osc2') this.updatePwm();
   }
 
-  // Fator de key tracking do filtro (vale da próxima nota em diante).
+  // Fator de key tracking do filtro. Aplica em TEMPO REAL se a voz está
+  // tocando (recalcula o cutoff com rampa curta) — assim o slider de filtro já
+  // afeta a nota segurada. Se não há nota (f1 = 0), só guarda para o ataque.
   setFilterKeyTrack(factor) {
     this.filterKeyTrack = factor;
+    this.applyFilter();
+  }
+
+  // Expressão (distância da mão): multiplicador do cutoff em torno do valor do
+  // slider. 1 = neutro (valor do slider); >1 abre o filtro; <1 fecha. Aplica em
+  // tempo real na nota que está soando.
+  setExpression(mult) {
+    this.expression = mult;
+    this.applyFilter();
   }
 
   // Ressonância do filtro (aplicada imediatamente a esta voz).
@@ -591,6 +634,14 @@ class LaserHarp {
     this.voices.forEach(v => v.setFilterKeyTrack(factor));
   }
 
+  // Expressão por NOTA (fatia 3 — distância da mão por corda). Acha a voz que
+  // está tocando aquela nota pelo mapa `active` e aplica só nela. Nota não
+  // ativa é ignorada. `mult` é o multiplicador do cutoff (1 = neutro).
+  setExpression(note, mult) {
+    const voice = this.active.get(note);
+    if (voice) voice.setExpression(mult);
+  }
+
   setFilterQ(q) {
     this.voices.forEach(v => v.setFilterQ(q));
   }
@@ -650,12 +701,15 @@ function setMasterVolume(percent) {
 }
 const activeKeys = new Set();
 const activePointers = new Map(); // pointerId -> note index
+const activeMidi = new Set();     // índices de corda pressionados via MIDI
+let midiAccess = null;            // objeto MIDIAccess (uma vez concedido, fica)
+let midiEnabled = false;          // preferência atual do usuário (toggle MIDI)
 let audioInitPromise = null;
 const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-10-31d';
+const JS_VERSION = '2026-11-03e';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
@@ -665,12 +719,17 @@ function setAudioStatus(message, error = false) {
 }
 
 // Linha de versão SEMPRE visível (não some com o status do áudio). Mostra as
-// versões de HTML e JS para diagnosticar cache do GitHub Pages de relance.
-const versionLine = document.getElementById('version-line');
-if (versionLine) {
+// versões de HTML e JS para diagnosticar cache do GitHub Pages de relance, mais
+// teclas/vozes e — quando ativo — "MIDI on", para conferir de relance no palco
+// que o modo controlador está ligado.
+function updateVersionLine() {
+  const versionLine = document.getElementById('version-line');
+  if (!versionLine) return;
+  const midiTag = midiEnabled ? ' · MIDI on' : '';
   versionLine.textContent =
-    `HTML v${HTML_VERSION} · JS v${JS_VERSION} · ${KEY_COUNT} teclas · ${VOICE_COUNT} vozes`;
+    `HTML v${HTML_VERSION} · JS v${JS_VERSION} · ${KEY_COUNT} teclas · ${VOICE_COUNT} vozes${midiTag}`;
 }
+updateVersionLine();
 
 audioButton.addEventListener('click', () => { setAudioStatus('Iniciando áudio…'); wakeAudio(); });
 setAudioStatus('Toque no botão ou numa tecla para ativar o áudio');
@@ -1487,7 +1546,9 @@ function populateScaleControls() {
 // Compartilha as mesmas notas entre teclado físico e superfícies de toque.
 function updateNote(index) {
   if (!isStarted) return;
-  const held = activeKeys.has(index) || [...activePointers.values()].includes(index);
+  const held = activeKeys.has(index) ||
+    activeMidi.has(index) ||
+    [...activePointers.values()].includes(index);
   const note = KEY_MAP[index].note;
   const el = document.getElementById(`key-${index}`);
   if (held) harp.triggerAttack(note);
@@ -1500,7 +1561,7 @@ function updateNote(index) {
 // reafina as teclas e limpa o destaque visual.
 function retune(rootNote = currentRoot, scaleId = currentScaleId) {
   if (harp) {
-    const held = new Set([...activeKeys, ...activePointers.values()]);
+    const held = new Set([...activeKeys, ...activeMidi, ...activePointers.values()]);
     held.forEach((index) => {
       const note = KEY_MAP[index].note;
       if (note) harp.triggerRelease(note);
@@ -1508,6 +1569,7 @@ function retune(rootNote = currentRoot, scaleId = currentScaleId) {
       if (el) el.classList.remove('active');
     });
     activeKeys.clear();
+    activeMidi.clear();
     activePointers.clear();
   }
   applyScale(rootNote, scaleId);
@@ -1595,8 +1657,221 @@ window.addEventListener('keyup', (e) => {
 });
 
 window.addEventListener('blur', () => {
-  const held = new Set([...activeKeys, ...activePointers.values()]);
+  const held = new Set([...activeKeys, ...activeMidi, ...activePointers.values()]);
   activeKeys.clear();
+  activeMidi.clear();
   activePointers.clear();
   held.forEach(updateNote);
 });
+
+// ---------------------------------------------------------------------------
+// ENTRADA MIDI (fatia 2). O hardware dos lasers emite ALTURA REAL — uma escala
+// fixa (pentatônica menor em C2, por corda). Aqui recebemos essas notas via
+// Web MIDI e as REMAPEAMOS de volta para ÍNDICE de corda; a altura final é a
+// da escala/nota base ATUAIS do site (igual ao teclado físico).
+//
+// Desenho (ver MIDI_PLAN.md): o hardware fala "altura" para servir ao FM-1 sem
+// computador; no PC, a web — flexível — traduz de volta para índice. Assim o
+// mesmo hardware serve aos dois cenários sem chave física.
+//
+// Feature detection: sem Web MIDI (ex.: navegador que não seja Chromium), não
+// faz nada e o app segue normalmente no teclado/toque.
+// ---------------------------------------------------------------------------
+
+// Notas MIDI que o hardware emite, UMA POR CORDA, na ordem das teclas. Derivadas
+// da pentatônica menor em C2 (o default do app), para nascerem consistentes com
+// o site. É uma tabela HARDCODED: quando o firmware existir, ajuste aqui as
+// notas reais que cada feixe envia. KEY_COUNT define quantas cordas valem.
+const HARDWARE_MIDI_NOTES = (() => {
+  const notes = buildNotes('C2', scaleById('penta-menor').intervals);
+  return notes.map(n => Tone.Frequency(n).toMidi());
+})();
+
+// Mapa reverso nota MIDI -> índice de corda (análogo ao CODE_TO_INDEX do
+// teclado). Se o hardware repetir uma nota em duas cordas, a primeira vence.
+const MIDINOTE_TO_INDEX = new Map();
+HARDWARE_MIDI_NOTES.forEach((midi, i) => {
+  if (!MIDINOTE_TO_INDEX.has(midi)) MIDINOTE_TO_INDEX.set(midi, i);
+});
+
+// Liga/desliga uma corda vinda do MIDI, espelhando o fluxo do teclado físico
+// (activeMidi + updateNote). `on` = Note On com velocity > 0.
+function midiSetString(index, on) {
+  if (index === undefined) return;
+  // ESTADO "dormindo": a 1ª mensagem só acorda o áudio (como a 1ª tecla).
+  // Ressalva: em alguns navegadores o Note On pode não contar como gesto do
+  // usuário para o AudioContext; o teclado tem a mesma limitação e, na prática,
+  // o áudio costuma já estar ativo via toque/clique inicial. Sem áudio, não soa
+  // ainda — a próxima mensagem já toca.
+  if (!isStarted) { wakeAudio(); return; }
+  if (on) activeMidi.add(index);
+  else activeMidi.delete(index);
+  updateNote(index);
+}
+
+// Expressão por corda (fatia 3): faixa do multiplicador do cutoff em torno do
+// valor do slider. O hardware manda a distância da mão como poly aftertouch
+// (0..127); mapeamos para [MIN, MAX]×, com 0 = NEUTRO (1×), não mínimo — assim,
+// sem expressão (hardware antigo ou mão longe), a corda soa como o slider
+// manda, e a mão só ADICIONA brilho ao se aproximar. Ajuste a gosto no palco.
+const EXPR_NEUTRAL = 1.0; // multiplicador quando aftertouch = 0 (sem mão perto)
+const EXPR_MAX = 2.5;     // multiplicador no aftertouch máximo (mão bem perto)
+
+// Converte o aftertouch MIDI (0..127) no multiplicador de cutoff. Linear entre
+// NEUTRAL e MAX. 0 -> NEUTRAL (nada muda); 127 -> MAX (brilho máximo).
+function aftertouchToExpression(value) {
+  const t = Math.max(0, Math.min(127, value)) / 127;
+  return EXPR_NEUTRAL + t * (EXPR_MAX - EXPR_NEUTRAL);
+}
+
+// Aplica a expressão (distância da mão) a uma corda pelo seu ÍNDICE. Traduz o
+// índice para a nota que a corda está tocando AGORA (depende da escala atual) e
+// repassa ao harp, que acha a voz ativa daquela nota.
+function midiSetExpression(index, aftertouch) {
+  if (index === undefined || !harp) return;
+  const note = KEY_MAP[index] && KEY_MAP[index].note;
+  if (note) harp.setExpression(note, aftertouchToExpression(aftertouch));
+}
+
+// Processa uma mensagem MIDI bruta. Trata Note On/Off nos dois sabores comuns
+// (0x90/0x80), Note On com velocity 0 como Note Off (convenção MIDI) e poly
+// aftertouch (0xA0) como expressão por corda (distância da mão -> brilho).
+function handleMidiMessage(event) {
+  const [status, data1, data2] = event.data;
+  const type = status & 0xf0;      // ignora o canal (0x90..0x9f -> 0x90)
+  if (type === 0x90 || type === 0x80) {
+    const index = MIDINOTE_TO_INDEX.get(data1);
+    const noteOn = (type === 0x90) && data2 > 0;
+    midiSetString(index, noteOn);
+  } else if (type === 0xa0) {        // poly aftertouch: data1 = nota, data2 = pressão
+    const index = MIDINOTE_TO_INDEX.get(data1);
+    midiSetExpression(index, data2);
+  }
+}
+
+// Estado do MIDI: `midiAccess` e `midiEnabled` ficam no bloco de globais (topo),
+// para já existirem quando updateVersionLine() roda no setup.
+
+// Persistência da preferência (mesma receita do volume/presets). Default: OFF,
+// para que visitantes da demo NUNCA vejam o popup de permissão MIDI.
+const MIDI_ENABLED_KEY = 'laser-harp-midi-enabled-v1';
+function loadMidiEnabled() {
+  try { return localStorage.getItem(MIDI_ENABLED_KEY) === '1'; } catch { return false; }
+}
+function saveMidiEnabled(on) {
+  try { localStorage.setItem(MIDI_ENABLED_KEY, on ? '1' : '0'); } catch { /* indisponível */ }
+}
+
+// Atualiza o rótulo de status ao lado do toggle e o trecho da linha de versão.
+function setMidiStatus(text) {
+  const el = document.getElementById('midi-status');
+  if (el) el.textContent = text;
+}
+
+// Conecta os handlers a todas as entradas atuais e às que forem plugadas
+// depois. Idempotente: pode ser chamado de novo sem duplicar nada.
+function attachMidiInputs(access) {
+  for (const input of access.inputs.values()) {
+    input.onmidimessage = handleMidiMessage;
+  }
+  access.onstatechange = (e) => {
+    if (midiEnabled && e.port && e.port.type === 'input' && e.port.state === 'connected') {
+      e.port.onmidimessage = handleMidiMessage;
+    }
+  };
+}
+
+// Desliga a escuta: remove os handlers de todas as entradas. A PERMISSÃO já
+// concedida pelo navegador não é revogável por nós, mas sem handlers nada
+// acontece — e nenhum popup reaparece.
+function detachMidiInputs() {
+  if (!midiAccess) return;
+  for (const input of midiAccess.inputs.values()) input.onmidimessage = null;
+  midiAccess.onstatechange = null;
+}
+
+// Liga o MIDI (pede acesso na 1ª vez; reusa o acesso nas seguintes). Tolerante
+// a ausência de Web MIDI e a permissão negada — nunca quebra o app. O popup do
+// navegador aparece aqui; por isso só chamamos quando o usuário OPTA por ligar.
+function enableMidi() {
+  if (!navigator.requestMIDIAccess) { setMidiStatus('indisponível neste navegador'); return; }
+  if (midiAccess) { attachMidiInputs(midiAccess); setMidiStatus('ligado'); updateVersionLine(); return; }
+  setMidiStatus('pedindo permissão…');
+  navigator.requestMIDIAccess({ sysex: false })
+    .then((access) => {
+      midiAccess = access;
+      attachMidiInputs(access);
+      setMidiStatus('ligado');
+      updateVersionLine();
+    })
+    .catch(() => { setMidiStatus('permissão negada'); });
+}
+
+// Desliga o MIDI (para de escutar) e solta cordas que estivessem presas.
+function disableMidi() {
+  detachMidiInputs();
+  if (activeMidi.size) {
+    const held = new Set(activeMidi);
+    activeMidi.clear();
+    held.forEach(updateNote);
+  }
+  setMidiStatus('desligado');
+  updateVersionLine();
+}
+
+// Aplica a preferência (liga/desliga) e, opcionalmente, persiste. Separado do
+// handler para ser reusável na carga inicial.
+function applyMidiEnabled(on, persist = true) {
+  midiEnabled = on;
+  if (persist) saveMidiEnabled(on);
+  const box = document.getElementById('ctrl-midi');
+  if (box) box.checked = on;
+  if (on) enableMidi();
+  else disableMidi();
+}
+
+// Liga o toggle da UI e restaura a preferência salva. Chamado no setup.
+function initMidiToggle() {
+  const box = document.getElementById('ctrl-midi');
+  const supported = !!navigator.requestMIDIAccess;
+  if (box && !supported) {
+    box.disabled = true;
+    setMidiStatus('indisponível neste navegador');
+  }
+  if (box) {
+    box.addEventListener('change', (e) => applyMidiEnabled(e.target.checked, true));
+  }
+  // Restaura a preferência: só pede acesso (e eventual popup) se o usuário já
+  // tinha LIGADO antes nesta máquina. Visitante novo => nada acontece.
+  if (supported && loadMidiEnabled()) {
+    applyMidiEnabled(true, false);
+  } else {
+    setMidiStatus(supported ? 'desligado' : 'indisponível neste navegador');
+  }
+}
+
+initMidiToggle();
+
+// ---------------------------------------------------------------------------
+// TESTE da expressão SEM hardware MIDI. Enquanto o controlador de lasers não
+// chega, dá para simular a "distância da mão" pelo console do navegador:
+//
+//   harpTestExpression(0)     -> neutro (como o slider; aftertouch 0)
+//   harpTestExpression(127)   -> brilho máximo (mão bem perto; aftertouch 127)
+//   harpTestExpression(64)    -> meio
+//   harpTestExpression(64, 3) -> só na corda de índice 3
+//
+// Segure uma nota (teclado/toque) e chame a função para ouvir o filtro abrir.
+// Sem índice, aplica a TODAS as cordas que estiverem soando. É uma ajuda de
+// teste; o hardware real mandará poly aftertouch por corda.
+// ---------------------------------------------------------------------------
+window.harpTestExpression = function (aftertouch = 0, index = null) {
+  if (!harp) { console.warn('Áudio ainda não iniciado — toque uma nota primeiro.'); return; }
+  if (index === null) {
+    // Todas as cordas atualmente soando (teclado + MIDI + toque).
+    const held = new Set([...activeKeys, ...activeMidi, ...activePointers.values()]);
+    held.forEach(i => midiSetExpression(i, aftertouch));
+  } else {
+    midiSetExpression(index, aftertouch);
+  }
+};
