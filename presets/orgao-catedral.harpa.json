@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "glide": 0,
+  "cutoff": 5.0,
+  "res": 0.8,
+  "chorus": 0.25,
+  "sweep": 0,
+  "sweeptime": 40,
+  "sweep1": 0,
+  "sweeptime1": 120,
+  "interval": 12,
+  "osc2": 0.7,
+  "attack": 15,
+  "decay": 200,
+  "sustain": 1.0,
+  "release": 350,
+  "wave1": "sine",
+  "wave2": "triangle",
+  "scale": "maior",
+  "root": "C2",
+  "name": "Órgão de Catedral"
+}

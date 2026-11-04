@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "glide": 0,
+  "cutoff": 4.0,
+  "res": 1.2,
+  "chorus": 0.2,
+  "sweep": 0,
+  "sweeptime": 40,
+  "sweep1": 0,
+  "sweeptime1": 120,
+  "interval": 12,
+  "osc2": 0.85,
+  "attack": 20,
+  "decay": 250,
+  "sustain": 1.0,
+  "release": 500,
+  "wave1": "sawtooth",
+  "wave2": "sine",
+  "scale": "dorico",
+  "root": "G1",
+  "name": "Órgão de Pedal"
+}
