@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "glide": 0,
+  "cutoff": 5.5,
+  "res": 1.0,
+  "chorus": 0.4,
+  "sweep": 0,
+  "sweeptime": 40,
+  "sweep1": 0,
+  "sweeptime1": 120,
+  "interval": 19,
+  "osc2": 0.8,
+  "attack": 18,
+  "decay": 220,
+  "sustain": 1.0,
+  "release": 400,
+  "wave1": "sawtooth",
+  "wave2": "triangle",
+  "scale": "maior",
+  "root": "C2",
+  "name": "Órgão de Catedral (Plena)"
+}
