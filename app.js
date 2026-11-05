@@ -16,7 +16,10 @@ const SCALES = [
   { id: 'penta-menor',  label: 'Pentatônica Menor',  intervals: [0, 3, 5, 7, 10] },
   { id: 'penta-maior',  label: 'Pentatônica Maior',  intervals: [0, 2, 4, 7, 9] },
   { id: 'maior',        label: 'Maior (Jônio)',      intervals: [0, 2, 4, 5, 7, 9, 11] },
-  { id: 'dorico',       label: 'Dórico',             intervals: [0, 2, 3, 5, 7, 9, 10] }
+  { id: 'dorico',       label: 'Dórico',             intervals: [0, 2, 3, 5, 7, 9, 10] },
+  // Frígio: modo menor com a 2ª menor (grau II a só 1 semitom da tônica).
+  // Cor espanhola/flamenca e um ar sombrio, medieval-sacro. Combina com órgão.
+  { id: 'frigio',       label: 'Frígio',             intervals: [0, 1, 3, 5, 7, 8, 10] }
 ];
 
 // 2. NOTAS BASE seguras — lista curta (em vez de slider cromático livre),
@@ -709,7 +712,7 @@ const audioStatus = document.getElementById('audio-status');
 // Versão do JS. A versão do HTML vem de <meta name="html-version">, para que,
 // se o celular estiver com HTML em cache antigo, dê para ver os dois números
 // e diagnosticar o que o GitHub Pages já propagou.
-const JS_VERSION = '2026-11-03f';
+const JS_VERSION = '2026-11-03g';
 const HTML_VERSION =
   document.querySelector('meta[name="html-version"]')?.content || '???';
 const audioButton = document.getElementById('start-audio');
